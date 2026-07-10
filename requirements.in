@@ -1,0 +1,7 @@
+# Direct, intentionally offline-tested learner dependencies.
+# Transitive dependencies belong only in requirements.lock.
+google-adk==2.4.0
+ipykernel==7.3.0
+nbclient==0.11.0
+nbformat==5.10.4
+python-dotenv==1.2.2

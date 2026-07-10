@@ -1,0 +1,25 @@
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Local Google Cloud credential files (prefer paths outside this repository)
+service-account-key.json
+service-account-*.json
+google-service-account-*.json
+
+# Python environments and bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Local tool state
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+notebooks/*.executed.ipynb
+
+# macOS
+.DS_Store
