@@ -1,10 +1,10 @@
 # Local setup
 
 This is the deliberately small first-run path for Search Agent Lab. It creates
-an isolated Python environment, installs the offline-tested Google ADK stack, passes a
-credential-free notebook check, and then optionally uses your own Gemini API
-key. It does not create a product agent, deploy anything, copy the shopping
-demo, or require Google Cloud.
+an isolated Python environment, installs the offline-tested Google ADK stack,
+passes a credential-free local environment check, and then optionally uses
+your own Gemini API key. It does not create a product agent, deploy anything,
+copy the shopping demo, or require Google Cloud.
 
 Google's current [ADK Python quickstart](https://adk.dev/get-started/python/)
 supports Python 3.10 or later and recommends a virtual environment. This
@@ -28,24 +28,28 @@ The direct, reviewed inputs live in requirements.in. requirements.lock contains
 the exact transitive resolution and hashes, so do not replace the install
 command with a bare unpinned pip install.
 
-## 2. Pass the offline setup check
+## 2. Pass the local environment check
 
-The default check has no API request and does not require .env. It calls a tiny
-deterministic local tool and renders only a redacted timeline:
-
-~~~text
-user input → agent → tool call → tool result → final answer
-~~~
-
-Open notebooks/00_setup_check.ipynb in a notebook-capable editor and select
-the .venv Python kernel, then run all cells. The final offline cell must print:
+Open notebooks/00_setup_check.ipynb in a notebook-capable editor, select the
+.venv Python kernel, and run all cells. The local check verifies only real
+local conditions: supported Python, the installed google-adk version, the
+repository location, checkpoint utility imports, and credential presence.
+It does not construct synthetic ADK events or pretend a local function call was
+a real agent run.
 
 ~~~text
-Offline setup check: PASS
+Local environment check
+Python: 3.11.x
+google-adk: 2.4.0
+checkpoint utilities: imported
+credential: not configured
+Local environment check: PASS
 ~~~
 
-This is Run 1. Keep RUN_LIVE_CHECK set to False. The notebook will not produce
-the Week 1 achievement, agent codename, or submission link in this mode.
+Without GOOGLE_API_KEY, the final cell says the live agent checkpoint is
+waiting and makes no model request. It does not print the achievement,
+codename, or submission link. A missing key leaves the live checkpoint
+incomplete; it does not fail the local environment.
 
 For a headless, non-destructive verification, install a local-only kernel and
 write the executed notebook to a temporary path:
@@ -79,23 +83,28 @@ detected; it never prints the value.
 
 ## 4. Run the optional live checkpoint
 
-This is Run 2. In notebooks/00_setup_check.ipynb:
+In notebooks/00_setup_check.ipynb:
 
-1. Set GITHUB_USERNAME explicitly to your public GitHub login.
-2. Change RUN_LIVE_CHECK from False to True.
+1. Replace GITHUB_USERNAME = "your-github-username" with your public GitHub
+   login. Do not infer it from Git configuration.
+2. Add GOOGLE_API_KEY to the untracked .env file as described above.
 3. Run all cells again.
 
-The check uses the current quickstart model alias gemini-flash-latest and one
-ADK runner invocation. Tool use can involve more than one underlying model
+When the key is detected, the notebook automatically uses gemini-3.5-flash and
+one ADK runner invocation. Tool use can involve more than one underlying model
 exchange, so this is intentionally a small connectivity check rather than a
 cost or performance test.
 
-The achievement and codename appear only when all three conditions pass:
+The achievement, codename, and Issue Form URL appear only when every condition
+passes:
 
 - the notebook detects your credential locally;
 - the live ADK invocation completes; and
-- the redacted timeline contains a real tool call, tool result, and final
-  answer event.
+- a real lookup_lab_status call for google-adk is observed;
+- its real result exactly matches the catalog-defined ready status, public
+  topic, and deterministic summary;
+- a non-thought final-answer event is observed; and
+- GITHUB_USERNAME is explicitly configured and valid.
 
 On success, the notebook prints:
 
@@ -109,11 +118,23 @@ It then generates a deterministic codename in this format:
 Emoji Color Animal — Agent Title
 ~~~
 
-The seed includes the normalized GitHub username and the versioned Week 1
-checkpoint. The reusable engine lives in search_agent_lab/checkpoints: the
-catalog defines each checkpoint, core.py owns generation and validation, and
-words.py keeps versioned word lists. The current notebook's Week 1 import is a
-compatibility facade over that same engine, so its v1 codenames stay stable.
+The reusable engine canonicalizes only the catalog-defined evidence:
+
+~~~text
+lookup_lab_status|ready|google-adk|The deterministic local tool completed.
+~~~
+
+It fingerprints that stable public evidence and uses a seed shaped like:
+
+~~~text
+search-agent-lab:<checkpoint-id>:<normalized-username>:<evidence-fingerprint>:<version>
+~~~
+
+It does not hash formatting, warnings, ADK version text, agent prose, raw model
+output, or the complete timeline. The catalog defines each checkpoint and its
+expected evidence, core.py owns canonicalization, fingerprinting, generation,
+and validation, and words.py keeps versioned word lists. The GitHub Action
+recomputes the same public evidence-bound codename from the actual issue author.
 
 The rendered timeline exposes only:
 
@@ -123,9 +144,9 @@ The rendered timeline exposes only:
 - a final-response acknowledgement with the content omitted.
 
 It does not serialize raw events, display private reasoning, print hidden
-instructions, or expose error details. If the live check does not complete,
-run offline mode again first, then verify key setup, network, quota, and model
-access without sharing the key.
+instructions, expose unexpected arguments or results, or show error details.
+If the live check does not complete, the local environment PASS remains valid;
+verify key setup, network, quota, and model access without sharing the key.
 
 The committed notebook is intentionally output-free. If a graphical editor
 saves cell outputs while you explore, clear them before any commit:
@@ -191,4 +212,4 @@ uv pip compile --python-version 3.11 --universal --generate-hashes requirements.
 ~~~
 
 Regenerate it only after intentionally testing the changed environment in a
-fresh Python 3.11 virtual environment and rerunning the offline notebook.
+fresh Python 3.11 virtual environment and rerunning the notebook without a key.

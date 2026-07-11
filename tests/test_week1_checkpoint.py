@@ -68,9 +68,9 @@ class UsernameNormalizationTests(unittest.TestCase):
 class CodenameTests(unittest.TestCase):
     def test_fixed_username_mappings(self) -> None:
         expected = {
-            "absurdwall": "🟢 Emerald Owl — Agent Explorer",
-            "octocat": "🟢 Emerald Gecko — Agent Navigator",
-            "a": "🔴 Crimson Otter — Agent Tinkerer",
+            "absurdwall": "🟣 Violet Dolphin — Agent Trailblazer",
+            "octocat": "🔴 Crimson Otter — Agent Investigator",
+            "a": "🔵 Azure Falcon — Agent Pathfinder",
         }
         for username, codename in expected.items():
             with self.subTest(username=username):

@@ -12,6 +12,7 @@ class CheckpointDefinition:
     achievement_message: str
     codename_version: str
     issue_title: str
+    expected_evidence: tuple[tuple[str, str], ...]
     checkpoint_label: str | None = None
     legacy_labels: tuple[str, ...] = ()
 
@@ -20,14 +21,20 @@ class UnknownCheckpointError(ValueError):
     """Raised when an issue names a checkpoint outside the public catalog."""
 
 
-# The ID is part of the original v1 seed. Do not change it: the generic core
-# builds search-agent-lab:<checkpoint_id>:<username>:<version>.
+# The ID and expected evidence are part of the locked v1 seed. Future changes
+# that should alter public mappings require a new codename version.
 WEEK_01 = CheckpointDefinition(
     checkpoint_id="week-01:first-tool-found",
     phrase="Week 1 — First tool found",
     achievement_message="🎉 The agent found its first tool!",
     codename_version="v1",
     issue_title="[Week 1 checkpoint] First tool found",
+    expected_evidence=(
+        ("tool", "lookup_lab_status"),
+        ("status", "ready"),
+        ("topic", "google-adk"),
+        ("summary", "The deterministic local tool completed."),
+    ),
     checkpoint_label="week-01",
     legacy_labels=("week-1-checkpoint",),
 )

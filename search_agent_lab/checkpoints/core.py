@@ -7,6 +7,7 @@ never copied into executable workflow source or status comments.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from dataclasses import dataclass
 import hashlib
 import json
@@ -55,6 +56,10 @@ _CODENAME_RE = re.compile(
     r"—\s+Agent\s+"
     r"(?P<title>[A-Za-z]+)$"
 )
+
+
+class EvidenceValidationError(ValueError):
+    """Raised when observed evidence differs from the public catalog."""
 
 
 @dataclass(frozen=True)
@@ -157,21 +162,77 @@ def normalize_github_username(value: str) -> str:
     return normalized
 
 
+def expected_evidence(
+    checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
+) -> dict[str, str]:
+    """Return a copy of the checkpoint's public allowlisted evidence."""
+    definition = resolve_checkpoint(checkpoint)
+    return dict(definition.expected_evidence)
+
+
+def _canonical_evidence_value(value: object) -> str:
+    if not isinstance(value, str):
+        raise EvidenceValidationError(
+            "Checkpoint evidence is incomplete or changed."
+        )
+    return " ".join(unicodedata.normalize("NFKC", value).split())
+
+
+def canonicalize_evidence(
+    evidence: Mapping[str, object] | None = None,
+    checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
+) -> str:
+    """Validate and canonicalize only catalog-declared evidence fields."""
+    definition = resolve_checkpoint(checkpoint)
+    if not definition.expected_evidence:
+        raise EvidenceValidationError(
+            "Checkpoint does not define expected evidence."
+        )
+
+    supplied = (
+        expected_evidence(definition)
+        if evidence is None
+        else evidence
+    )
+    canonical_values: list[str] = []
+    for field, expected_value in definition.expected_evidence:
+        actual = _canonical_evidence_value(supplied.get(field))
+        expected = _canonical_evidence_value(expected_value)
+        if actual != expected:
+            raise EvidenceValidationError(
+                "Checkpoint evidence is incomplete or changed."
+            )
+        canonical_values.append(actual)
+    return "|".join(canonical_values)
+
+
+def evidence_fingerprint(
+    evidence: Mapping[str, object] | None = None,
+    checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
+) -> str:
+    """Hash the stable allowlisted evidence, never a full runtime trace."""
+    canonical = canonicalize_evidence(evidence, checkpoint)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def codename_seed(
     username: str,
     checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
+    evidence: Mapping[str, object] | None = None,
 ) -> str:
     definition = resolve_checkpoint(checkpoint)
     normalized = normalize_github_username(username)
+    fingerprint = evidence_fingerprint(evidence, definition)
     return (
         f"search-agent-lab:{definition.checkpoint_id}:"
-        f"{normalized}:{definition.codename_version}"
+        f"{normalized}:{fingerprint}:{definition.codename_version}"
     )
 
 
 def generate_codename(
     username: str,
     checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
+    evidence: Mapping[str, object] | None = None,
 ) -> str:
     """Generate a deterministic codename for a catalog checkpoint."""
     definition = resolve_checkpoint(checkpoint)
@@ -181,7 +242,7 @@ def generate_codename(
         raise ValueError("Unknown codename word-list version.") from error
 
     digest = hashlib.sha256(
-        codename_seed(username, definition).encode("utf-8")
+        codename_seed(username, definition, evidence).encode("utf-8")
     ).digest()
     color_index = int.from_bytes(digest[0:8], "big") % len(
         words.color_badges
@@ -398,6 +459,7 @@ def validate_issue_submission(
 def build_issue_form_url(
     username: str,
     checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
+    evidence: Mapping[str, object] | None = None,
     *,
     repository: str = DEFAULT_REPOSITORY,
 ) -> str:
@@ -410,7 +472,7 @@ def build_issue_form_url(
         ("title", definition.issue_title),
         ("checkpoint_id", definition.checkpoint_id),
         ("checkpoint", definition.phrase),
-        ("codename", generate_codename(username, definition)),
+        ("codename", generate_codename(username, definition, evidence)),
     )
     return (
         f"https://github.com/{repository}/issues/new?"

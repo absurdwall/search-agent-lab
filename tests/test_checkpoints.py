@@ -16,8 +16,13 @@ from search_agent_lab.checkpoints import (
     STATUS_COMMENT_MARKER,
     WEEK_01,
     CheckpointDefinition,
+    EvidenceValidationError,
     UnknownCheckpointError,
     build_issue_form_url,
+    canonicalize_evidence,
+    codename_seed,
+    evidence_fingerprint,
+    expected_evidence,
     generate_codename,
     get_checkpoint,
     is_status_comment,
@@ -65,11 +70,11 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaises(UnknownCheckpointError):
             get_checkpoint("week-99:not-real")
 
-    def test_week_1_fixed_mappings_are_preserved(self) -> None:
+    def test_week_1_v1_mappings_are_locked(self) -> None:
         expected = {
-            "absurdwall": "🟢 Emerald Owl — Agent Explorer",
-            "octocat": "🟢 Emerald Gecko — Agent Navigator",
-            "a": "🔴 Crimson Otter — Agent Tinkerer",
+            "absurdwall": "🟣 Violet Dolphin — Agent Trailblazer",
+            "octocat": "🔴 Crimson Otter — Agent Investigator",
+            "a": "🔵 Azure Falcon — Agent Pathfinder",
         }
         for username, codename in expected.items():
             with self.subTest(username=username):
@@ -77,6 +82,58 @@ class CatalogTests(unittest.TestCase):
                     generate_codename(username, WEEK_01),
                     codename,
                 )
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_week_1_expected_evidence_and_canonical_form(self) -> None:
+        evidence = expected_evidence(WEEK_01)
+        self.assertEqual(
+            evidence,
+            {
+                "tool": "lookup_lab_status",
+                "status": "ready",
+                "topic": "google-adk",
+                "summary": "The deterministic local tool completed.",
+            },
+        )
+        self.assertEqual(
+            canonicalize_evidence(evidence, WEEK_01),
+            "lookup_lab_status|ready|google-adk|"
+            "The deterministic local tool completed.",
+        )
+
+    def test_evidence_fingerprint_is_stable_and_in_seed(self) -> None:
+        evidence = {
+            **expected_evidence(WEEK_01),
+            "ignored_runtime_detail": "not hashed",
+        }
+        fingerprint = evidence_fingerprint(evidence, WEEK_01)
+        self.assertEqual(
+            fingerprint,
+            "17060e3f04638ae68ad69932216d020fc4e8fdca46693daa467f7d55d4d4dd91",
+        )
+        spaced_evidence = {
+            **expected_evidence(WEEK_01),
+            "summary": "  The deterministic  local tool completed.  ",
+        }
+        self.assertEqual(
+            evidence_fingerprint(spaced_evidence, WEEK_01),
+            fingerprint,
+        )
+        self.assertEqual(
+            codename_seed("AbsurdWall", WEEK_01, evidence),
+            "search-agent-lab:week-01:first-tool-found:absurdwall:"
+            f"{fingerprint}:v1",
+        )
+
+    def test_incomplete_or_changed_evidence_is_rejected(self) -> None:
+        incomplete = expected_evidence(WEEK_01)
+        incomplete.pop("summary")
+        changed = {**expected_evidence(WEEK_01), "status": "unknown"}
+        for evidence in (incomplete, changed):
+            with self.subTest(evidence=evidence):
+                with self.assertRaises(EvidenceValidationError):
+                    generate_codename("absurdwall", WEEK_01, evidence)
 
 
 class GenericIssueTests(unittest.TestCase):
@@ -184,6 +241,12 @@ class GenericIssueTests(unittest.TestCase):
             achievement_message="🎉 Another tool!",
             codename_version="v1",
             issue_title="[Week 2 checkpoint] Second tool found",
+            expected_evidence=(
+                ("tool", "lookup_second_status"),
+                ("status", "ready"),
+                ("topic", "week-02"),
+                ("summary", "The second deterministic tool completed."),
+            ),
             checkpoint_label="week-02",
         )
         with patch.dict(CHECKPOINTS, {future.checkpoint_id: future}):
