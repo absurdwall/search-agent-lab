@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from search_agent_lab.checkpoints import WEEK_01, expected_evidence
-from search_agent_lab.setup_check import assess_live_checkpoint
+from search_agent_lab.checks.setup import assess_live_checkpoint
 
 
 def successful_timeline() -> list[tuple[str, object]]:

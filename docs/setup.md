@@ -154,6 +154,13 @@ The rendered timeline exposes only:
 - the allowlisted deterministic result; and
 - a final-response acknowledgement with the content omitted.
 
+The notebook keeps only the learner-facing orchestration. The reusable
+search_agent_lab/checks/adk_events.py adapter converts raw ADK events into safe
+allowlisted rows, and search_agent_lab/checks/setup.py assesses those rows
+against the expected setup behavior. The separate search_agent_lab/checkpoints
+package remains responsible for evidence fingerprints, codenames, Issue Form
+URLs, and public Issue validation.
+
 It does not serialize raw events, display private reasoning, print hidden
 instructions, expose unexpected arguments or results, or show error details.
 If the live check does not complete, the local environment PASS remains valid;

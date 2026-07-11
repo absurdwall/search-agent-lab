@@ -26,14 +26,17 @@ not authentication or formal grading; all expected evidence remains public.
 - [notebooks/00_setup_check.ipynb](notebooks/00_setup_check.ipynb) always runs
   an honest local environment check. Without a key it stops with a friendly
   waiting message; with a key it automatically attempts one real ADK run.
+- [search_agent_lab/checks](search_agent_lab/checks) keeps runtime safety out of
+  the learner notebook: adk_events.py converts raw ADK events into allowlisted
+  rows, and setup.py decides whether those safe rows satisfy the setup check.
 - [requirements.lock](requirements.lock) is a hash-locked, offline-tested
   Python 3.11 environment; its direct inputs are recorded in
   [requirements.in](requirements.in).
 - Notebooks and the GitHub validator share the reusable checkpoint engine in
   [search_agent_lab/checkpoints](search_agent_lab/checkpoints). Checkpoint
   definitions, allowlisted evidence, deterministic behavior, and versioned
-  word lists are separate, so later weeks do not need copied modules or
-  workflows.
+  word lists remain independent from ADK runtime imports and own only the
+  optional public checkpoint after a check succeeds.
 - Codename generation requires explicit evidence: notebooks pass evidence
   validated from the real live timeline, while the GitHub validator explicitly
   passes the catalog's public expected evidence for the actual issue author.
