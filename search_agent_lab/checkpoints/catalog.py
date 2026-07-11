@@ -14,7 +14,6 @@ class CheckpointDefinition:
     issue_title: str
     expected_evidence: tuple[tuple[str, str], ...]
     checkpoint_label: str | None = None
-    legacy_labels: tuple[str, ...] = ()
 
 
 class UnknownCheckpointError(ValueError):
@@ -36,7 +35,6 @@ WEEK_01 = CheckpointDefinition(
         ("summary", "The deterministic local tool completed."),
     ),
     checkpoint_label="week-01",
-    legacy_labels=("week-1-checkpoint",),
 )
 
 DEFAULT_CHECKPOINT_ID = WEEK_01.checkpoint_id

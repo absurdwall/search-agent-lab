@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+import tempfile
 import textwrap
 import unittest
 from unittest.mock import patch
@@ -29,6 +33,7 @@ from search_agent_lab.checkpoints import (
     parse_issue_submission,
     validate_issue_submission,
 )
+from search_agent_lab.checkpoints.core import main
 
 
 def issue_body_for(
@@ -41,6 +46,7 @@ def issue_body_for(
     checked: bool = True,
 ) -> str:
     checkbox = "x" if checked else " "
+    evidence = expected_evidence(checkpoint)
     return textwrap.dedent(
         f"""\
         ### {CHECKPOINT_ID_SECTION}
@@ -53,7 +59,7 @@ def issue_body_for(
 
         ### {CODENAME_SECTION}
 
-        {codename or generate_codename(username, checkpoint)}
+        {codename or generate_codename(username, checkpoint, evidence)}
 
         ### {HONOR_SECTION}
 
@@ -71,6 +77,7 @@ class CatalogTests(unittest.TestCase):
             get_checkpoint("week-99:not-real")
 
     def test_week_1_v1_mappings_are_locked(self) -> None:
+        evidence = expected_evidence(WEEK_01)
         expected = {
             "absurdwall": "🟣 Violet Dolphin — Agent Trailblazer",
             "octocat": "🔴 Crimson Otter — Agent Investigator",
@@ -79,12 +86,25 @@ class CatalogTests(unittest.TestCase):
         for username, codename in expected.items():
             with self.subTest(username=username):
                 self.assertEqual(
-                    generate_codename(username, WEEK_01),
+                    generate_codename(username, WEEK_01, evidence),
                     codename,
                 )
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_public_generation_functions_require_evidence(self) -> None:
+        calls = (
+            (canonicalize_evidence, ()),
+            (evidence_fingerprint, ()),
+            (codename_seed, ("absurdwall", WEEK_01)),
+            (generate_codename, ("absurdwall", WEEK_01)),
+            (build_issue_form_url, ("absurdwall", WEEK_01)),
+        )
+        for function, arguments in calls:
+            with self.subTest(function=function.__name__):
+                with self.assertRaises(TypeError):
+                    function(*arguments)
+
     def test_week_1_expected_evidence_and_canonical_form(self) -> None:
         evidence = expected_evidence(WEEK_01)
         self.assertEqual(
@@ -138,8 +158,11 @@ class EvidenceTests(unittest.TestCase):
 
 class GenericIssueTests(unittest.TestCase):
     def test_generic_url_prefills_all_checkpoint_fields(self) -> None:
+        evidence = expected_evidence(WEEK_01)
         query = parse_qs(
-            urlparse(build_issue_form_url("absurdwall", WEEK_01)).query
+            urlparse(
+                build_issue_form_url("absurdwall", WEEK_01, evidence)
+            ).query
         )
         self.assertEqual(query["template"], [ISSUE_TEMPLATE_FILENAME])
         self.assertEqual(query["title"], [WEEK_01.issue_title])
@@ -150,10 +173,11 @@ class GenericIssueTests(unittest.TestCase):
         self.assertEqual(query["checkpoint"], [WEEK_01.phrase])
         self.assertEqual(
             query["codename"],
-            [generate_codename("absurdwall", WEEK_01)],
+            [generate_codename("absurdwall", WEEK_01, evidence)],
         )
 
     def test_generic_issue_form_parsing(self) -> None:
+        evidence = expected_evidence(WEEK_01)
         submission = parse_issue_submission(
             issue_body_for(WEEK_01, "absurdwall")
         )
@@ -161,7 +185,7 @@ class GenericIssueTests(unittest.TestCase):
         self.assertEqual(submission.checkpoint, WEEK_01.phrase)
         self.assertEqual(
             submission.codename,
-            generate_codename("absurdwall", WEEK_01),
+            generate_codename("absurdwall", WEEK_01, evidence),
         )
         self.assertTrue(submission.honor_confirmed)
 
@@ -174,6 +198,20 @@ class GenericIssueTests(unittest.TestCase):
         self.assertIn(
             "The codename does not match the actual issue author.",
             invalid.errors,
+        )
+
+    def test_github_validation_passes_catalog_evidence_explicitly(self) -> None:
+        body = issue_body_for(WEEK_01, "absurdwall")
+        with patch(
+            "search_agent_lab.checkpoints.core.generate_codename",
+            wraps=generate_codename,
+        ) as generator:
+            result = validate_issue_submission("AbsurdWall", body)
+        self.assertTrue(result.valid)
+        generator.assert_called_once_with(
+            "absurdwall",
+            WEEK_01,
+            expected_evidence(WEEK_01),
         )
 
     def test_invalid_fields_remain_helpful_and_static(self) -> None:
@@ -252,13 +290,48 @@ class GenericIssueTests(unittest.TestCase):
         with patch.dict(CHECKPOINTS, {future.checkpoint_id: future}):
             body = issue_body_for(future, "octocat")
             result = validate_issue_submission("octocat", body)
-            url = build_issue_form_url("octocat", future.checkpoint_id)
+            url = build_issue_form_url(
+                "octocat",
+                future.checkpoint_id,
+                expected_evidence(future),
+            )
         self.assertTrue(result.valid)
         self.assertEqual(result.checkpoint, future)
         self.assertEqual(
             parse_qs(urlparse(url).query)["checkpoint_id"],
             [future.checkpoint_id],
         )
+
+    def test_action_cli_reads_issue_text_as_environment_data(self) -> None:
+        body = issue_body_for(WEEK_01, "absurdwall")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output = Path(temporary_directory) / "result.json"
+            environment = {
+                "TEST_ISSUE_BODY": body,
+                "TEST_ISSUE_TITLE": WEEK_01.issue_title,
+                "TEST_ISSUE_LABELS": json.dumps(["checkpoint", "week-01"]),
+            }
+            with patch.dict(os.environ, environment, clear=False):
+                return_code = main(
+                    [
+                        "validate-issue",
+                        "--username",
+                        "absurdwall",
+                        "--body-env",
+                        "TEST_ISSUE_BODY",
+                        "--title-env",
+                        "TEST_ISSUE_TITLE",
+                        "--labels-env",
+                        "TEST_ISSUE_LABELS",
+                        "--output",
+                        str(output),
+                    ]
+                )
+            payload = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(return_code, 0)
+        self.assertTrue(payload["applicable"])
+        self.assertTrue(payload["valid"])
+        self.assertNotIn("submitted_body", payload)
 
 
 if __name__ == "__main__":

@@ -34,10 +34,7 @@ from .core import (
     validate_issue_submission,
 )
 
-ACHIEVEMENT_MESSAGE = WEEK_01.achievement_message
-
 __all__ = (
-    "ACHIEVEMENT_MESSAGE",
     "BASE_LABEL",
     "CHECKPOINTS",
     "CHECKPOINT_ID_SECTION",

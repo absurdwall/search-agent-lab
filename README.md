@@ -34,8 +34,9 @@ not authentication or formal grading; all expected evidence remains public.
   definitions, allowlisted evidence, deterministic behavior, and versioned
   word lists are separate, so later weeks do not need copied modules or
   workflows.
-- [search_agent_lab/week1_checkpoint.py](search_agent_lab/week1_checkpoint.py)
-  remains a small compatibility facade for earlier callers.
+- Codename generation requires explicit evidence: notebooks pass evidence
+  validated from the real live timeline, while the GitHub validator explicitly
+  passes the catalog's public expected evidence for the actual issue author.
 - Checkpoint issues are public. Share only the generated codename—never keys,
   .env contents, private traces, or raw model responses.
 - The upstream shop_agent.ipynb remains an instructor demo run separately from

@@ -102,6 +102,12 @@ def assess_live_checkpoint(
             ),
         )
 
+    validated_evidence = {
+        field: value
+        for field, value in observed_evidence.items()
+        if isinstance(value, str)
+    }
+
     final_seen = any(
         stage == "final answer"
         for stage, _ in rows[result_index + 1 :]
@@ -118,6 +124,6 @@ def assess_live_checkpoint(
 
     return LiveCheckpointAssessment(
         succeeded=True,
-        evidence=expected_evidence(definition),
+        evidence=validated_evidence,
         message="Checkpoint evidence validated.",
     )

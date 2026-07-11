@@ -179,7 +179,7 @@ def _canonical_evidence_value(value: object) -> str:
 
 
 def canonicalize_evidence(
-    evidence: Mapping[str, object] | None = None,
+    evidence: Mapping[str, object],
     checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
 ) -> str:
     """Validate and canonicalize only catalog-declared evidence fields."""
@@ -189,14 +189,9 @@ def canonicalize_evidence(
             "Checkpoint does not define expected evidence."
         )
 
-    supplied = (
-        expected_evidence(definition)
-        if evidence is None
-        else evidence
-    )
     canonical_values: list[str] = []
     for field, expected_value in definition.expected_evidence:
-        actual = _canonical_evidence_value(supplied.get(field))
+        actual = _canonical_evidence_value(evidence.get(field))
         expected = _canonical_evidence_value(expected_value)
         if actual != expected:
             raise EvidenceValidationError(
@@ -207,7 +202,7 @@ def canonicalize_evidence(
 
 
 def evidence_fingerprint(
-    evidence: Mapping[str, object] | None = None,
+    evidence: Mapping[str, object],
     checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
 ) -> str:
     """Hash the stable allowlisted evidence, never a full runtime trace."""
@@ -217,8 +212,8 @@ def evidence_fingerprint(
 
 def codename_seed(
     username: str,
-    checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
-    evidence: Mapping[str, object] | None = None,
+    checkpoint: str | CheckpointDefinition,
+    evidence: Mapping[str, object],
 ) -> str:
     definition = resolve_checkpoint(checkpoint)
     normalized = normalize_github_username(username)
@@ -231,8 +226,8 @@ def codename_seed(
 
 def generate_codename(
     username: str,
-    checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
-    evidence: Mapping[str, object] | None = None,
+    checkpoint: str | CheckpointDefinition,
+    evidence: Mapping[str, object],
 ) -> str:
     """Generate a deterministic codename for a catalog checkpoint."""
     definition = resolve_checkpoint(checkpoint)
@@ -302,8 +297,6 @@ def parse_issue_sections(body: str) -> dict[str, str]:
 
 def parse_issue_submission(
     body: str,
-    *,
-    default_checkpoint_id: str = "",
 ) -> IssueSubmission:
     sections = parse_issue_sections(body)
     honor_lines = sections.get(HONOR_SECTION, "").splitlines()
@@ -316,7 +309,7 @@ def parse_issue_submission(
     )
     return IssueSubmission(
         checkpoint_id=normalize_phrase(
-            sections.get(CHECKPOINT_ID_SECTION, default_checkpoint_id)
+            sections.get(CHECKPOINT_ID_SECTION, "")
         ),
         checkpoint=normalize_phrase(
             sections.get(CHECKPOINT_SECTION, "")
@@ -331,7 +324,6 @@ def _known_checkpoint_labels() -> set[str]:
     for definition in CHECKPOINTS.values():
         if definition.checkpoint_label:
             labels.add(definition.checkpoint_label)
-        labels.update(definition.legacy_labels)
     return labels
 
 
@@ -355,29 +347,12 @@ def _is_checkpoint_issue(
     )
 
 
-def _infer_legacy_checkpoint_id(
-    title: str,
-    labels: tuple[str, ...],
-) -> str:
-    """Recognize pre-refactor Week 1 issues without weakening new forms."""
-    normalized_title = normalize_phrase(title)
-    normalized_labels = {normalize_phrase(label) for label in labels}
-    matches = [
-        definition.checkpoint_id
-        for definition in CHECKPOINTS.values()
-        if normalized_title.startswith(normalize_phrase(definition.issue_title))
-        or bool(normalized_labels & set(definition.legacy_labels))
-    ]
-    return matches[0] if len(matches) == 1 else ""
-
-
 def validate_issue_submission(
     username: str,
     body: str,
     *,
     title: str = "",
     labels: tuple[str, ...] = (),
-    default_checkpoint_id: str = "",
 ) -> ValidationResult:
     """Validate one issue against its actual author's public login."""
     sections = parse_issue_sections(body)
@@ -407,13 +382,7 @@ def validate_issue_submission(
             ),
         )
 
-    submission = parse_issue_submission(
-        body,
-        default_checkpoint_id=(
-            default_checkpoint_id
-            or _infer_legacy_checkpoint_id(title, labels)
-        ),
-    )
+    submission = parse_issue_submission(body)
     try:
         definition = resolve_checkpoint(submission.checkpoint_id)
     except UnknownCheckpointError:
@@ -429,6 +398,7 @@ def validate_issue_submission(
     expected_codename = generate_codename(
         normalized_username,
         definition,
+        expected_evidence(definition),
     )
     errors: list[str] = []
     if submission.checkpoint != definition.phrase:
@@ -458,8 +428,8 @@ def validate_issue_submission(
 
 def build_issue_form_url(
     username: str,
-    checkpoint: str | CheckpointDefinition = DEFAULT_CHECKPOINT_ID,
-    evidence: Mapping[str, object] | None = None,
+    checkpoint: str | CheckpointDefinition,
+    evidence: Mapping[str, object],
     *,
     repository: str = DEFAULT_REPOSITORY,
 ) -> str:

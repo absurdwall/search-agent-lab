@@ -85,8 +85,9 @@ detected; it never prints the value.
 
 In notebooks/00_setup_check.ipynb:
 
-1. Replace GITHUB_USERNAME = "your-github-username" with your public GitHub
-   login. Do not infer it from Git configuration.
+1. In the dedicated Required learner configuration cell, replace
+   GITHUB_USERNAME = "your-github-username" with your public GitHub login.
+   Do not infer it from Git configuration.
 2. Add GOOGLE_API_KEY to the untracked .env file as described above.
 3. Run all cells again.
 
@@ -94,6 +95,10 @@ When the key is detected, the notebook automatically uses gemini-3.5-flash and
 one ADK runner invocation. Tool use can involve more than one underlying model
 exchange, so this is intentionally a small connectivity check rather than a
 cost or performance test.
+
+If Google returns 503 UNAVAILABLE with a high-demand message, the model service
+is temporarily at capacity. The local environment check is still valid; wait
+briefly and rerun only the live checkpoint cell.
 
 The achievement, codename, and Issue Form URL appear only when every condition
 passes:
@@ -133,8 +138,14 @@ search-agent-lab:<checkpoint-id>:<normalized-username>:<evidence-fingerprint>:<v
 It does not hash formatting, warnings, ADK version text, agent prose, raw model
 output, or the complete timeline. The catalog defines each checkpoint and its
 expected evidence, core.py owns canonicalization, fingerprinting, generation,
-and validation, and words.py keeps versioned word lists. The GitHub Action
-recomputes the same public evidence-bound codename from the actual issue author.
+and validation, and words.py keeps versioned word lists.
+
+Evidence is never implicit in the generation API. The notebook passes the
+observed evidence returned only after the real live timeline is validated. The
+GitHub Action cannot observe that runtime, so it explicitly passes the
+catalog-defined expected evidence when recomputing the codename for the actual
+issue author. All of this evidence is public: the checkpoint remains an
+optional honor-system celebration, not authentication or proof of execution.
 
 The rendered timeline exposes only:
 
