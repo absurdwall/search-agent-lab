@@ -1,0 +1,129 @@
+name: Validate Week 1 checkpoint
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+      - reopened
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: week-1-checkpoint-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the validator
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate issue fields as data
+        env:
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_LABELS: ${{ toJson(github.event.issue.labels.*.name) }}
+        run: |
+          python -m search_agent_lab.week1_checkpoint validate-issue \
+            --username "$ISSUE_AUTHOR" \
+            --body-env ISSUE_BODY \
+            --title-env ISSUE_TITLE \
+            --labels-env ISSUE_LABELS \
+            --output "$RUNNER_TEMP/week1-result.json"
+
+      - name: Apply labels, comment, and state
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          RESULT_PATH: ${{ runner.temp }}/week1-result.json
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const result = JSON.parse(
+              fs.readFileSync(process.env.RESULT_PATH, 'utf8')
+            );
+
+            if (!result.applicable) {
+              core.info('Issue is not a Week 1 checkpoint submission.');
+              return;
+            }
+
+            const labelDefinitions = [
+              {
+                name: 'week-1-checkpoint',
+                color: '5319e7',
+                description: 'Optional Week 1 learner checkpoint'
+              },
+              {
+                name: 'week-1-passed',
+                color: '0e8a16',
+                description: 'Week 1 checkpoint passed'
+              },
+              {
+                name: 'week-1-needs-fix',
+                color: 'd93f0b',
+                description: 'Week 1 checkpoint needs an edit'
+              }
+            ];
+
+            for (const definition of labelDefinitions) {
+              try {
+                await github.rest.issues.getLabel({
+                  ...context.repo,
+                  name: definition.name
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                try {
+                  await github.rest.issues.createLabel({
+                    ...context.repo,
+                    ...definition
+                  });
+                } catch (createError) {
+                  if (createError.status !== 422) throw createError;
+                }
+              }
+            }
+
+            const statusLabel = result.valid
+              ? 'week-1-passed'
+              : 'week-1-needs-fix';
+            const oppositeLabel = result.valid
+              ? 'week-1-needs-fix'
+              : 'week-1-passed';
+
+            try {
+              await github.rest.issues.removeLabel({
+                ...context.repo,
+                issue_number: context.issue.number,
+                name: oppositeLabel
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            await github.rest.issues.addLabels({
+              ...context.repo,
+              issue_number: context.issue.number,
+              labels: ['week-1-checkpoint', statusLabel]
+            });
+
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: result.comment
+            });
+
+            await github.rest.issues.update({
+              ...context.repo,
+              issue_number: context.issue.number,
+              state: result.valid ? 'closed' : 'open',
+              ...(result.valid ? {state_reason: 'completed'} : {})
+            });

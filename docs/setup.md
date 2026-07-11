@@ -44,6 +44,9 @@ the .venv Python kernel, then run all cells. The final offline cell must print:
 Offline setup check: PASS
 ~~~
 
+This is Run 1. Keep RUN_LIVE_CHECK set to False. The notebook will not produce
+the Week 1 achievement, agent codename, or submission link in this mode.
+
 For a headless, non-destructive verification, install a local-only kernel and
 write the executed notebook to a temporary path:
 
@@ -74,13 +77,41 @@ Do not paste the key into a terminal command, notebook output, chat, or Git.
 The notebook loads .env locally and reports only whether a credential was
 detected; it never prints the value.
 
-## 4. Optional live ADK invocation
+## 4. Run the optional live checkpoint
 
-In notebooks/00_setup_check.ipynb, change RUN_LIVE_CHECK from False to True and
-run all cells again. The check uses the current quickstart model alias
-gemini-flash-latest and one ADK runner invocation. Tool use can involve more
-than one underlying model exchange, so this is intentionally a small
-connectivity check rather than a cost or performance test.
+This is Run 2. In notebooks/00_setup_check.ipynb:
+
+1. Set GITHUB_USERNAME explicitly to your public GitHub login.
+2. Change RUN_LIVE_CHECK from False to True.
+3. Run all cells again.
+
+The check uses the current quickstart model alias gemini-flash-latest and one
+ADK runner invocation. Tool use can involve more than one underlying model
+exchange, so this is intentionally a small connectivity check rather than a
+cost or performance test.
+
+The achievement and codename appear only when all three conditions pass:
+
+- the notebook detects your credential locally;
+- the live ADK invocation completes; and
+- the redacted timeline contains a real tool call, tool result, and final
+  answer event.
+
+On success, the notebook prints:
+
+~~~text
+🎉 The agent found its first tool!
+~~~
+
+It then generates a deterministic codename in this format:
+
+~~~text
+Emoji Color Animal — Agent Title
+~~~
+
+The seed includes the normalized GitHub username and the versioned Week 1
+checkpoint. The curated word lists and hashing logic live in one shared
+repository module used by both the notebook and GitHub Action.
 
 The rendered timeline exposes only:
 
@@ -100,6 +131,27 @@ saves cell outputs while you explore, clear them before any commit:
 ~~~zsh
 jupyter nbconvert --ClearOutputPreprocessor.enabled=True --to notebook --inplace notebooks/00_setup_check.ipynb
 ~~~
+
+## 5. Optional public Issue Form
+
+After a successful live checkpoint, the notebook prints a prefilled GitHub
+Issue Form URL containing only the checkpoint phrase and generated codename.
+Open it while signed in to the same GitHub account entered as GITHUB_USERNAME,
+review the public fields, check the honor-system confirmation, and submit.
+
+The validator recomputes the expected codename from the actual issue author:
+
+- valid submissions receive the week-1-passed label, a cheerful comment, and
+  automatic closure;
+- invalid submissions receive week-1-needs-fix, helpful editing instructions,
+  and remain open; and
+- edits and reopened issues are revalidated, with the opposite status label
+  removed.
+
+This is optional, public, and based on learner honesty. It is not identity
+authentication, access control, certification, or formal grading. Do not put
+API keys, .env contents, personal paths, private traces, raw events, or model
+responses in the issue.
 
 ## Later option: Google Cloud / Vertex
 
