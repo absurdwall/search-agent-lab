@@ -1,4 +1,4 @@
-name: Validate Week 1 checkpoint
+name: Validate learner checkpoint
 
 on:
   issues:
@@ -12,7 +12,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: week-1-checkpoint-${{ github.event.issue.number }}
+  group: checkpoint-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
@@ -24,24 +24,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate issue fields as data
+      - name: Validate issue fields as untrusted data
         env:
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_LABELS: ${{ toJson(github.event.issue.labels.*.name) }}
         run: |
-          python -m search_agent_lab.week1_checkpoint validate-issue \
+          python -m search_agent_lab.checkpoints.cli validate-issue \
             --username "$ISSUE_AUTHOR" \
             --body-env ISSUE_BODY \
             --title-env ISSUE_TITLE \
             --labels-env ISSUE_LABELS \
-            --output "$RUNNER_TEMP/week1-result.json"
+            --output "$RUNNER_TEMP/checkpoint-result.json"
 
-      - name: Apply labels, comment, and state
+      - name: Apply labels, update status comment, and set state
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
-          RESULT_PATH: ${{ runner.temp }}/week1-result.json
+          RESULT_PATH: ${{ runner.temp }}/checkpoint-result.json
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -51,27 +51,35 @@ jobs:
             );
 
             if (!result.applicable) {
-              core.info('Issue is not a Week 1 checkpoint submission.');
+              core.info('Issue is not a learner checkpoint submission.');
               return;
             }
 
             const labelDefinitions = [
               {
-                name: 'week-1-checkpoint',
+                name: 'checkpoint',
                 color: '5319e7',
-                description: 'Optional Week 1 learner checkpoint'
+                description: 'Optional public learner checkpoint'
               },
               {
-                name: 'week-1-passed',
+                name: 'passed',
                 color: '0e8a16',
-                description: 'Week 1 checkpoint passed'
+                description: 'Checkpoint passed'
               },
               {
-                name: 'week-1-needs-fix',
+                name: 'needs-fix',
                 color: 'd93f0b',
-                description: 'Week 1 checkpoint needs an edit'
+                description: 'Checkpoint needs an edit'
               }
             ];
+
+            if (result.checkpoint_label) {
+              labelDefinitions.push({
+                name: result.checkpoint_label,
+                color: '1d76db',
+                description: 'Checkpoint-specific learner milestone'
+              });
+            }
 
             for (const definition of labelDefinitions) {
               try {
@@ -92,12 +100,8 @@ jobs:
               }
             }
 
-            const statusLabel = result.valid
-              ? 'week-1-passed'
-              : 'week-1-needs-fix';
-            const oppositeLabel = result.valid
-              ? 'week-1-needs-fix'
-              : 'week-1-passed';
+            const statusLabel = result.valid ? 'passed' : 'needs-fix';
+            const oppositeLabel = result.valid ? 'needs-fix' : 'passed';
 
             try {
               await github.rest.issues.removeLabel({
@@ -109,17 +113,42 @@ jobs:
               if (error.status !== 404) throw error;
             }
 
+            const labels = ['checkpoint', statusLabel];
+            if (result.checkpoint_label) {
+              labels.push(result.checkpoint_label);
+            }
             await github.rest.issues.addLabels({
               ...context.repo,
               issue_number: context.issue.number,
-              labels: ['week-1-checkpoint', statusLabel]
+              labels
             });
 
-            await github.rest.issues.createComment({
-              ...context.repo,
-              issue_number: context.issue.number,
-              body: result.comment
-            });
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                ...context.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              }
+            );
+            const statusComment = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]' &&
+              comment.body?.includes(result.comment_marker)
+            );
+
+            if (statusComment) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: statusComment.id,
+                body: result.comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body: result.comment
+              });
+            }
 
             await github.rest.issues.update({
               ...context.repo,

@@ -110,8 +110,10 @@ Emoji Color Animal — Agent Title
 ~~~
 
 The seed includes the normalized GitHub username and the versioned Week 1
-checkpoint. The curated word lists and hashing logic live in one shared
-repository module used by both the notebook and GitHub Action.
+checkpoint. The reusable engine lives in search_agent_lab/checkpoints: the
+catalog defines each checkpoint, core.py owns generation and validation, and
+words.py keeps versioned word lists. The current notebook's Week 1 import is a
+compatibility facade over that same engine, so its v1 codenames stay stable.
 
 The rendered timeline exposes only:
 
@@ -135,18 +137,25 @@ jupyter nbconvert --ClearOutputPreprocessor.enabled=True --to notebook --inplace
 ## 5. Optional public Issue Form
 
 After a successful live checkpoint, the notebook prints a prefilled GitHub
-Issue Form URL containing only the checkpoint phrase and generated codename.
+Issue Form URL containing the checkpoint ID, checkpoint phrase, generated
+codename, and issue title.
 Open it while signed in to the same GitHub account entered as GITHUB_USERNAME,
 review the public fields, check the honor-system confirmation, and submit.
 
 The validator recomputes the expected codename from the actual issue author:
 
-- valid submissions receive the week-1-passed label, a cheerful comment, and
-  automatic closure;
-- invalid submissions receive week-1-needs-fix, helpful editing instructions,
-  and remain open; and
+- valid submissions receive checkpoint, passed, and week-01 labels, a cheerful
+  status comment, and automatic closure;
+- invalid submissions receive checkpoint and needs-fix labels, helpful editing
+  instructions, and remain open; and
 - edits and reopened issues are revalidated, with the opposite status label
-  removed.
+  removed. The validator updates its existing status comment rather than
+  adding a new comment on every edit.
+
+Later checkpoints use this same public form and workflow. Maintainers normally
+add one data entry to search_agent_lab/checkpoints/catalog.py, then call the
+shared checkpoint API from the relevant notebook; hashing, parsing, labels,
+comments, and Action behavior stay centralized.
 
 This is optional, public, and based on learner honesty. It is not identity
 authentication, access control, certification, or formal grading. Do not put

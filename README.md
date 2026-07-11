@@ -27,9 +27,12 @@ or formal grading.
 - [requirements.lock](requirements.lock) is a hash-locked, offline-tested
   Python 3.11 environment; its direct inputs are recorded in
   [requirements.in](requirements.in).
-- The notebook and GitHub validator share the same versioned implementation in
-  [search_agent_lab/week1_checkpoint.py](search_agent_lab/week1_checkpoint.py);
-  codename lists and hashing logic are not duplicated.
+- Notebooks and the GitHub validator share the reusable checkpoint engine in
+  [search_agent_lab/checkpoints](search_agent_lab/checkpoints). Checkpoint
+  definitions, deterministic behavior, and versioned word lists are separate,
+  so later weeks do not need copied modules or workflows.
+- [search_agent_lab/week1_checkpoint.py](search_agent_lab/week1_checkpoint.py)
+  remains a small compatibility facade for the current setup notebook.
 - Checkpoint issues are public. Share only the generated codename—never keys,
   .env contents, private traces, or raw model responses.
 - The upstream shop_agent.ipynb remains an instructor demo run separately from
