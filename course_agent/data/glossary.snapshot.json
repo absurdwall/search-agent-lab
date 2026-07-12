@@ -1,0 +1,763 @@
+{
+  "schema_version": 1,
+  "generated_from": "glossary/terms/*.md",
+  "terms": [
+    {
+      "id": "agent",
+      "term": "Agent",
+      "aliases": [
+        "AI agent",
+        "LLM agent"
+      ],
+      "category": "agent-systems",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "narrower",
+          "target": "llm-agent"
+        },
+        {
+          "type": "narrower",
+          "target": "sub-agent"
+        },
+        {
+          "type": "uses",
+          "target": "large-language-model"
+        },
+        {
+          "type": "uses",
+          "target": "react"
+        },
+        {
+          "type": "uses",
+          "target": "tool"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Building effective agents",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "note": "Supports the distinction between model-directed agents and systems that follow predefined code paths."
+        },
+        {
+          "title": "A practical guide to building agents",
+          "url": "https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/",
+          "note": "Describes agents as systems that independently complete tasks by managing workflow execution and selecting tools within guardrails."
+        }
+      ],
+      "sections": {
+        "Simple definition": "An LLM-based system that uses tools in a loop, choosing what to do next until it reaches a goal.",
+        "Working definition": "An agent is a system in which a model dynamically directs how a goal is pursued. It interprets the current context, selects actions or tools, observes results, and repeats until it can answer, stop, correct course, or return control to a person.",
+        "Why it matters": "Agents are useful when a task's path cannot be completely specified in advance. That flexibility enables ambiguous, multi-step work, but it also increases cost, latency, variability, and the need for evaluation and guardrails.",
+        "Example": "Given “find organic milk under $4 and add the cheapest,” an agent searches the live catalog, compares the returned products, calls the cart tool with the selected item, and then reports the result.",
+        "Common confusion": "Adding an LLM to an application does not automatically make it an agent. The defining property in this glossary is model-directed execution: the model chooses the next step rather than only filling a fixed position in a predefined pipeline.",
+        "Study-group notes": "Week 1 shorthand: “Agent = LLM + Tools + Loop.” The formula is a useful architectural map, while the fuller definition emphasizes that the model controls the evolving path."
+      }
+    },
+    {
+      "id": "callback",
+      "term": "Callback",
+      "aliases": [
+        "lifecycle callback",
+        "agent callback",
+        "hook"
+      ],
+      "category": "control-and-quality",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "guardrail"
+        },
+        {
+          "type": "related",
+          "target": "llm-agent"
+        },
+        {
+          "type": "related",
+          "target": "runner"
+        },
+        {
+          "type": "related",
+          "target": "tool"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Callbacks: Observe, Customize, and Control Agent Behavior",
+          "url": "https://adk.dev/callbacks/",
+          "note": "Documents callbacks as functions invoked at predefined points before or after agent, model, and tool execution."
+        },
+        {
+          "title": "ADK Technical Overview",
+          "url": "https://adk.dev/get-started/about/",
+          "note": "Summarizes callbacks as custom code for checks, logging, and behavior modification at specific process points."
+        }
+      ],
+      "sections": {
+        "Simple definition": "Code ADK runs at a defined point in the agent process to observe, modify, block, or replace behavior.",
+        "Working definition": "A callback is developer-supplied code registered at a defined point in an ADK agent's lifecycle, such as before or after agent, model, or tool execution. Depending on the hook, it can inspect data, record events, modify requests or results, block an action, or short-circuit a step.",
+        "Why it matters": "Callbacks provide controlled intervention points without rewriting the core agent loop. They support tracing, policy enforcement, approvals, caching, state updates, request adaptation, and performance optimizations.",
+        "Example": "A `before_tool` callback checks a proposed `place_order` call. If the session lacks explicit customer confirmation, it returns a blocked result and the purchasing function never runs.",
+        "Common confusion": "A callback is a mechanism, not automatically a safety policy. The same hook system can implement a guardrail, collect metrics, alter a request, or skip unnecessary model work.",
+        "Study-group notes": "Week 1 demonstrated three callback patterns: a tool-round limit, an action gate, and a short-circuit that avoids an extra model call after a tool has already built the response."
+      }
+    },
+    {
+      "id": "context-window",
+      "term": "Context window",
+      "aliases": [
+        "model context window",
+        "context limit"
+      ],
+      "category": "foundations",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "large-language-model"
+        },
+        {
+          "type": "related",
+          "target": "prompt"
+        },
+        {
+          "type": "related",
+          "target": "session"
+        },
+        {
+          "type": "related",
+          "target": "skill"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Understand and count tokens",
+          "url": "https://ai.google.dev/gemini-api/docs/tokens",
+          "note": "Defines a model's context window as the token limit covering the input it can receive and the output it can generate."
+        },
+        {
+          "title": "Long context",
+          "url": "https://ai.google.dev/gemini-api/docs/long-context",
+          "note": "Explains how finite context affects use cases, cost, latency, and strategies for providing relevant information."
+        }
+      ],
+      "sections": {
+        "Simple definition": "The limited token space containing the input a model can consider and the output it can generate in one request.",
+        "Working definition": "The context window is the maximum token budget a model can process for one generation, typically accounting for the supplied input and generated output. Agent frameworks decide which instructions, messages, tool schemas, tool results, and retrieved material occupy that limited space.",
+        "Why it matters": "Context determines what information is available to the model at a given step. Larger or poorly managed context can increase cost and latency, exceed model limits, or bury relevant instructions among unnecessary material.",
+        "Example": "An agent includes its system prompt, recent conversation events, a product-search result, and the newest user message in the next request while omitting an unrelated old transcript.",
+        "Common confusion": "The context window is not durable memory. Information must be selected and placed into a model request each time; a session or memory service stores information outside the model and helps the application decide what to include.",
+        "Study-group notes": "Week 1 emphasized the engineering tradeoff: give the model everything it needs while keeping the request focused enough to control cost, latency, and distraction."
+      }
+    },
+    {
+      "id": "google-adk",
+      "term": "Google Agent Development Kit (ADK)",
+      "aliases": [
+        "Google ADK",
+        "ADK",
+        "Agent Development Kit"
+      ],
+      "category": "frameworks-and-protocols",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "llm-agent"
+        },
+        {
+          "type": "related",
+          "target": "model-context-protocol"
+        },
+        {
+          "type": "related",
+          "target": "runner"
+        },
+        {
+          "type": "related",
+          "target": "session"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Agent Development Kit Technical Overview",
+          "url": "https://adk.dev/get-started/about/",
+          "note": "Describes ADK's core concepts and its support for building, managing, evaluating, and deploying agent applications."
+        }
+      ],
+      "sections": {
+        "Simple definition": "Google's open-source framework for building, running, evaluating, and deploying agent systems.",
+        "Working definition": "Google Agent Development Kit is a model-agnostic development framework for agent applications. It provides agent types, tools, callbacks, sessions, runtime services, evaluation support, deployment integrations, and orchestration patterns across supported programming languages.",
+        "Why it matters": "An agent framework supplies the execution machinery around a model: tool dispatch, events, session persistence, callbacks, streaming, and composition. This lets developers focus on agent behavior without rebuilding the entire runtime loop.",
+        "Example": "A developer defines an `LlmAgent` with instructions and catalog tools, creates a `SessionService`, and uses a `Runner` to process user messages and stream execution events.",
+        "Common confusion": "ADK is not an LLM and is not limited to Gemini or Python. It coordinates supported models and agent components; model capabilities, external services, and application code remain separate dependencies.",
+        "Study-group notes": "Week 1 summarized ADK as `LlmAgent + Tool + Session + Runner + Callbacks`, with the framework owning the execution loop and plumbing."
+      }
+    },
+    {
+      "id": "guardrail",
+      "term": "Guardrail",
+      "aliases": [
+        "agent guardrail",
+        "safety guardrail",
+        "action gate"
+      ],
+      "category": "control-and-quality",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "callback"
+        },
+        {
+          "type": "related",
+          "target": "llm-agent"
+        },
+        {
+          "type": "related",
+          "target": "tool"
+        }
+      ],
+      "sources": [
+        {
+          "title": "A practical guide to building agents",
+          "url": "https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/",
+          "note": "Describes layered model-based and rules-based guardrails for managing privacy, safety, relevance, and tool risk."
+        },
+        {
+          "title": "Callbacks: Observe, Customize, and Control Agent Behavior",
+          "url": "https://adk.dev/callbacks/",
+          "note": "Shows how ADK callbacks can enforce safety rules, validate data, and prevent disallowed operations."
+        }
+      ],
+      "sections": {
+        "Simple definition": "A check or control that keeps an agent's inputs, outputs, and actions within defined boundaries.",
+        "Working definition": "A guardrail is a policy-enforcing check or control applied to an agent's inputs, outputs, tool requests, state, or execution. Guardrails can use deterministic rules, model-based checks, permissions, approvals, or callback code to keep behavior within safety, policy, quality, and scope boundaries.",
+        "Why it matters": "Agents can follow variable paths and may affect external systems. Layered guardrails help reject unsafe requests, constrain risky actions, validate results, limit runaway behavior, and escalate work when automation should stop.",
+        "Example": "Before an order tool runs, a code-level guardrail verifies that the cart is valid, the user explicitly confirmed the purchase, and the proposed amount is within the agent's authorization limit.",
+        "Common confusion": "Prompt instructions alone are not strong enforcement, and guardrails do not replace authentication, authorization, least privilege, secure software design, or human oversight. They are one layer in a broader control system.",
+        "Study-group notes": "Week 1 used callbacks to implement guardrails. The callback is the lifecycle hook; the guardrail is the boundary or policy enforced through that hook."
+      }
+    },
+    {
+      "id": "large-language-model",
+      "term": "Large language model (LLM)",
+      "aliases": [
+        "LLM",
+        "language model"
+      ],
+      "category": "foundations",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "context-window"
+        },
+        {
+          "type": "related",
+          "target": "prompt"
+        }
+      ],
+      "sources": [
+        {
+          "title": "A practical guide to building agents",
+          "url": "https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/",
+          "note": "Identifies the model as the component that supplies an agent's reasoning and decision-making rather than the whole agent system."
+        },
+        {
+          "title": "Understand and count tokens",
+          "url": "https://ai.google.dev/gemini-api/docs/tokens",
+          "note": "Explains token-based model inputs and outputs and the finite context window within which a model processes them."
+        }
+      ],
+      "sections": {
+        "Simple definition": "A model that takes a token sequence as input and generates output; it has no persistent session memory, tools, or agent loop by itself.",
+        "Working definition": "A large language model is a model trained on large collections of language data to generate output from the context supplied to a model call. In an agent system, the LLM interprets instructions, evaluates the available context, and produces text or structured requests, but surrounding software supplies persistence, tool execution, and the repeated execution loop.",
+        "Why it matters": "Separating the model from the system around it makes agent architecture easier to understand. Model quality affects reasoning and generation, while the framework determines what context is supplied, which capabilities are available, and what happens after each output.",
+        "Example": "Given a customer question and relevant policy text, an LLM can draft an answer. To verify a live order, an agent framework must expose an order tool, execute the requested call, and return the result to the model in a later step.",
+        "Common confusion": "An LLM and an agent are not synonyms. A hosted model API may offer convenient features, but the model itself does not maintain an application's durable session history or execute arbitrary business functions.",
+        "Study-group notes": "Week 1 shorthand: `f(token_sequence) → output`. “No memory, tools, or loop” describes the bare model call; those capabilities come from the surrounding application or framework."
+      }
+    },
+    {
+      "id": "llm-agent",
+      "term": "LlmAgent",
+      "aliases": [
+        "ADK Agent",
+        "model-driven agent"
+      ],
+      "category": "frameworks-and-protocols",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "broader",
+          "target": "agent"
+        },
+        {
+          "type": "uses",
+          "target": "callback"
+        },
+        {
+          "type": "uses",
+          "target": "react"
+        },
+        {
+          "type": "uses",
+          "target": "system-prompt"
+        },
+        {
+          "type": "uses",
+          "target": "tool"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Simple agents with LlmAgent",
+          "url": "https://adk.dev/agents/llm-agents/",
+          "note": "Documents LlmAgent as ADK's model-driven agent class and explains how instructions, models, and tools shape its behavior."
+        },
+        {
+          "title": "Agent Development Kit Technical Overview",
+          "url": "https://adk.dev/get-started/about/",
+          "note": "Places LlmAgent within ADK's broader set of agent, runtime, tool, callback, and session primitives."
+        }
+      ],
+      "sections": {
+        "Simple definition": "ADK's model-driven agent type, combining a generative model with instructions, tools, and execution behavior.",
+        "Working definition": "`LlmAgent` is ADK's core non-deterministic agent class. A developer gives it an identity, model, instructions, tools, callbacks, and optional composition settings; during execution, the model interprets context and dynamically decides what output or tool request to produce.",
+        "Why it matters": "`LlmAgent` is the point where the general idea of an agent becomes a concrete ADK component. Understanding its configuration clarifies which concerns belong to the model, the agent definition, and the runtime.",
+        "Example": "A shopping `LlmAgent` uses a selected model, a system instruction describing its job, product and cart tools, and a `before_tool` callback that blocks unconfirmed purchases.",
+        "Common confusion": "`LlmAgent` defines model-driven behavior but does not execute by itself. A Runner and supporting services provide invocation, session handling, event persistence, and interaction with the surrounding application.",
+        "Study-group notes": "Week 1 called `LlmAgent` the orchestrator that wraps a model with instructions, tools, and callbacks. More precisely, it defines the model-driven execution logic that ADK's runtime invokes."
+      }
+    },
+    {
+      "id": "model-context-protocol",
+      "term": "Model Context Protocol (MCP)",
+      "aliases": [
+        "MCP",
+        "Model Context Protocol"
+      ],
+      "category": "frameworks-and-protocols",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "google-adk"
+        },
+        {
+          "type": "related",
+          "target": "tool"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Model Context Protocol specification overview",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18/basic/index",
+          "note": "Defines the protocol's JSON-RPC base, lifecycle, capabilities, and client-server responsibilities."
+        },
+        {
+          "title": "MCP server features",
+          "url": "https://modelcontextprotocol.io/specification/2025-06-18/server/index",
+          "note": "Documents the tools, resources, and prompts that MCP servers can expose to clients."
+        }
+      ],
+      "sections": {
+        "Simple definition": "An open protocol connecting AI applications to tools, resources, and prompt templates through client-server interfaces.",
+        "Working definition": "Model Context Protocol is an open client-server protocol for exposing capabilities and context to AI applications through standardized messages. MCP servers can offer tools, resources, and prompt templates; MCP clients negotiate capabilities and make those primitives available to the host application or agent.",
+        "Why it matters": "MCP separates capability providers from agent frameworks. A compatible server can expose the same integration to multiple clients, reducing one-off adapter code and giving applications a consistent discovery and invocation model.",
+        "Example": "An inventory MCP server exposes `search_products` and `get_stock` tools. ADK connects as an MCP client and presents their schemas to an agent alongside local tools.",
+        "Common confusion": "MCP is a protocol, not an agent framework or a tool by itself. It defines how clients and servers communicate; the server implements capabilities, the host manages connections, and the model may decide when to request an exposed tool.",
+        "Study-group notes": "Week 1 used the “standard plug shape” analogy: an MCP client such as ADK connects to a server and makes its remote capabilities available in the agent's tool set."
+      }
+    },
+    {
+      "id": "prompt",
+      "term": "Prompt",
+      "aliases": [
+        "model prompt",
+        "LLM prompt"
+      ],
+      "category": "foundations",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "narrower",
+          "target": "system-prompt"
+        },
+        {
+          "type": "related",
+          "target": "context-window"
+        },
+        {
+          "type": "related",
+          "target": "large-language-model"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Introduction to prompting",
+          "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/prompts/introduction-prompt-design",
+          "note": "Defines prompts as requests to a language model and describes instructions, context, examples, and system instructions as prompt components."
+        },
+        {
+          "title": "Prompt design strategies",
+          "url": "https://ai.google.dev/gemini-api/docs/prompting-strategies",
+          "note": "Provides current guidance for structuring instructions and context to elicit useful model responses."
+        }
+      ],
+      "sections": {
+        "Simple definition": "The instructions, context, examples, and input supplied to a model for one request.",
+        "Working definition": "A prompt is the information presented to a language model to shape one generation. Depending on the API and framework, it can include system instructions, user messages, conversation history, examples, retrieved context, tool results, and the current task.",
+        "Why it matters": "The model can only respond to the information and instructions available in its current request. Prompt content and structure therefore affect relevance, reliability, formatting, tool selection, cost, and how much room remains in the context window.",
+        "Example": "Before an agent answers “add the cheapest one,” its framework assembles system instructions, earlier product-search results, the prior assistant response, and the newest user message into the information sent to the model.",
+        "Common confusion": "A prompt is not necessarily just the sentence typed by the user. In an agent application, the user message is often one component of a larger request assembled by the framework.",
+        "Study-group notes": "Week 1 treated the prompt as “everything the LLM sees for this call,” while noting that APIs may transmit some components, such as tool schemas, in separate structured fields."
+      }
+    },
+    {
+      "id": "react",
+      "term": "ReAct",
+      "aliases": [
+        "ReAct loop",
+        "Reason + Act"
+      ],
+      "category": "agent-systems",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "agent"
+        },
+        {
+          "type": "related",
+          "target": "llm-agent"
+        },
+        {
+          "type": "uses",
+          "target": "large-language-model"
+        },
+        {
+          "type": "uses",
+          "target": "tool"
+        }
+      ],
+      "sources": [
+        {
+          "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+          "url": "https://arxiv.org/abs/2210.03629",
+          "note": "Introduces the ReAct paradigm of interleaving reasoning traces with task-specific actions and observations."
+        },
+        {
+          "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+          "url": "https://research.google/blog/react-synergizing-reasoning-and-acting-in-language-models/",
+          "note": "Provides the Google Research explanation of how reasoning, actions, and environmental observations work together."
+        }
+      ],
+      "sections": {
+        "Simple definition": "An agent pattern that interleaves reasoning, actions, and observations to choose successive steps.",
+        "Working definition": "ReAct is a model-and-tool interaction pattern in which an agent alternates between deciding what to do, taking an action, and using the resulting observation to inform the next step. The cycle continues until the agent reaches an answer or stopping condition.",
+        "Why it matters": "ReAct allows the path to adapt to information learned during execution. It is useful when the necessary tools or number of steps cannot be known reliably before the task begins.",
+        "Example": "An agent first searches for milk, observes product IDs and prices, selects the cheapest qualifying result, calls the cart tool, and then observes whether the cart update succeeded before responding.",
+        "Common confusion": "ReAct names an interaction pattern, not a requirement to expose private model reasoning to users or logs. Production implementations can preserve the action-and-observation loop while keeping internal reasoning private.",
+        "Study-group notes": "Week 1 visualized ReAct as Reason → Act → Observe → repeat, with tool results becoming new context for the next model call."
+      }
+    },
+    {
+      "id": "runner",
+      "term": "Runner",
+      "aliases": [
+        "ADK Runner",
+        "agent runner"
+      ],
+      "category": "frameworks-and-protocols",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "callback"
+        },
+        {
+          "type": "related",
+          "target": "google-adk"
+        },
+        {
+          "type": "uses",
+          "target": "llm-agent"
+        },
+        {
+          "type": "uses",
+          "target": "session"
+        }
+      ],
+      "sources": [
+        {
+          "title": "ADK Runtime Event Loop",
+          "url": "https://adk.dev/runtime/event-loop/",
+          "note": "Explains how Runner coordinates agents, callbacks, tools, events, sessions, and runtime services during an invocation."
+        },
+        {
+          "title": "ADK Agent Team tutorial",
+          "url": "https://adk.dev/tutorials/agent-team/",
+          "note": "Shows Runner as the engine that accepts user input, invokes agent logic, manages session updates, and yields execution events."
+        }
+      ],
+      "sections": {
+        "Simple definition": "The ADK runtime component that executes agents and coordinates sessions, tools, callbacks, and emitted events.",
+        "Working definition": "A Runner is ADK's entry point for processing user input through an agent application. It creates the invocation context, retrieves the appropriate Session through a service, invokes agent execution logic, coordinates callbacks and tools, persists resulting events and state changes, and yields events to the caller.",
+        "Why it matters": "Runner connects a static agent definition to a live application turn. It centralizes runtime concerns that would otherwise need custom orchestration code around every model and tool call.",
+        "Example": "An application passes a user ID, session ID, and new message to `runner.run_async(...)`, then consumes streamed events until it receives the final response.",
+        "Common confusion": "Runner is not the agent and does not supply the model's task instructions. The `LlmAgent` defines model-driven behavior; Runner executes that behavior within ADK's runtime and service environment.",
+        "Study-group notes": "Week 1 called Runner the component that wires agent, session, and I/O together. Its event stream also exposes tool calls and results without requiring access to private model reasoning."
+      }
+    },
+    {
+      "id": "session",
+      "term": "Session",
+      "aliases": [
+        "ADK session",
+        "conversation session"
+      ],
+      "category": "frameworks-and-protocols",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "context-window"
+        },
+        {
+          "type": "related",
+          "target": "llm-agent"
+        },
+        {
+          "type": "related",
+          "target": "runner"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Conversational Context: Session, State, and Memory",
+          "url": "https://adk.dev/sessions/",
+          "note": "Defines Session as one conversation thread containing an event history and temporary State, distinct from cross-session Memory."
+        },
+        {
+          "title": "Session: Tracking Individual Conversations",
+          "url": "https://adk.dev/sessions/session/",
+          "note": "Documents session lifecycle, SessionService responsibilities, persistence options, events, and state updates."
+        }
+      ],
+      "sections": {
+        "Simple definition": "ADK's record of one conversation thread, including its event history and temporary state.",
+        "Working definition": "A Session represents one ongoing interaction between a user and an ADK application. It contains the chronological events produced during that conversation and a State dictionary for temporary conversation-specific data; a SessionService manages its lifecycle and persistence.",
+        "Why it matters": "The model itself does not retain application history between calls. Sessions give the runtime a durable record from which it can reconstruct relevant context, continue a conversation, and track state changes.",
+        "Example": "A shopping session stores events for the original product search and the agent's response, plus temporary state such as an explicit purchase-confirmation flag used by a later callback.",
+        "Common confusion": "Session, State, context window, and Memory are different. The Session is the conversation record, State is temporary structured data inside it, the context window is what reaches a model call, and Memory supports information beyond one session.",
+        "Study-group notes": "Week 1 described Session as the agent's memory across turns. The precise ADK view is a stored conversation thread whose events and state allow the runtime to assemble later context."
+      }
+    },
+    {
+      "id": "skill",
+      "term": "Skill",
+      "aliases": [
+        "agent skill",
+        "SKILL.md"
+      ],
+      "category": "agent-systems",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "context-window"
+        },
+        {
+          "type": "related",
+          "target": "llm-agent"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Skills for ADK agents",
+          "url": "https://adk.dev/skills/",
+          "note": "Defines an ADK Skill as a modular task-specific unit of instructions, resources, and tools that can be loaded incrementally."
+        }
+      ],
+      "sections": {
+        "Simple definition": "A modular package of task-specific instructions, resources, and tools that an agent can load when needed.",
+        "Working definition": "An agent Skill packages specialized guidance for a task or domain so it can be discovered and loaded incrementally. In ADK, a Skill can include metadata, instructions, reference resources, scripts, assets, and associated tools rather than requiring all domain knowledge to remain in the base prompt.",
+        "Why it matters": "Skills organize expertise into reusable modules and reduce unnecessary context. They let an agent load detailed guidance only when relevant, improving maintainability and conserving context-window space.",
+        "Example": "A recipe Skill exposes a short description for discovery and loads detailed dietary rules, tool instructions, and reference material only after the agent recognizes a recipe request.",
+        "Common confusion": "A Skill is not another agent. Loading one enriches the current agent's available instructions and resources; it does not inherently create a separate model call, execution loop, or isolated session.",
+        "Study-group notes": "Week 1 used a simple two-tier `SKILL.md` pattern: short metadata always available, with fuller Markdown instructions loaded on demand. Current ADK Skills can also package resources and tools, and the feature is experimental as of this review."
+      }
+    },
+    {
+      "id": "sub-agent",
+      "term": "Sub-agent",
+      "aliases": [
+        "child agent",
+        "ADK sub-agent"
+      ],
+      "category": "agent-systems",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "broader",
+          "target": "agent"
+        },
+        {
+          "type": "related",
+          "target": "llm-agent"
+        },
+        {
+          "type": "related",
+          "target": "runner"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Agents in ADK",
+          "url": "https://adk.dev/agents/",
+          "note": "Describes ADK agents as self-contained execution units that can be composed into multi-agent systems."
+        },
+        {
+          "title": "Function tools: Agent-as-a-Tool",
+          "url": "https://adk.dev/tools/function-tools/",
+          "note": "Explicitly distinguishes responsibility transfer to a sub-agent from calling another agent through AgentTool and returning control to the parent."
+        }
+      ],
+      "sections": {
+        "Simple definition": "A child agent that can receive delegated responsibility from a parent agent inside a multi-agent system.",
+        "Working definition": "A sub-agent is an agent composed beneath another agent and available for delegated work. In current ADK terminology, transferring to a sub-agent changes which agent is responsible for answering, while wrapping an agent with `AgentTool` creates an agent-as-a-tool whose result returns to the parent.",
+        "Why it matters": "Specialized agents can isolate instructions, tools, models, and responsibilities. Choosing between transfer and call-and-return affects routing, conversational ownership, context, cost, and which agent handles the next user message.",
+        "Example": "A shopping agent transfers a returns conversation to a returns sub-agent that continues with the user. By contrast, it may call a research agent through `AgentTool`, receive a product summary, and then retain control of the conversation.",
+        "Common confusion": "ADK does not use “sub-agent” and “agent-as-a-tool” as interchangeable terms. A sub-agent receives control through delegation or transfer; an `AgentTool` performs bounded work and returns its answer to the calling agent.",
+        "Study-group notes": "Week 1 used “sub-agent called as a tool” as broad shorthand. This glossary keeps the teaching comparison—separate agent versus loaded instructions—but adopts ADK's current, more precise distinction."
+      }
+    },
+    {
+      "id": "system-prompt",
+      "term": "System prompt",
+      "aliases": [
+        "system instruction",
+        "developer instruction"
+      ],
+      "category": "foundations",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "broader",
+          "target": "prompt"
+        },
+        {
+          "type": "related",
+          "target": "guardrail"
+        },
+        {
+          "type": "related",
+          "target": "llm-agent"
+        }
+      ],
+      "sources": [
+        {
+          "title": "System instructions",
+          "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/learn/prompts/system-instruction-introduction",
+          "note": "Explains system instructions as developer-provided guidance for model role, goals, rules, context, style, and output format."
+        },
+        {
+          "title": "Simple agents with LlmAgent",
+          "url": "https://adk.dev/agents/llm-agents/",
+          "note": "Documents the ADK instruction field used to guide an LlmAgent's identity, behavior, and tool use."
+        }
+      ],
+      "sections": {
+        "Simple definition": "Developer-provided instructions that set a model's role, rules, and behavior for a request or conversation.",
+        "Working definition": "A system prompt, also called a system instruction in some APIs, is higher-priority developer guidance supplied alongside user input. It commonly defines the agent's purpose, behavioral rules, tool-routing guidance, tone, constraints, and expected output format.",
+        "Why it matters": "System prompts provide a consistent operating frame across many user messages. Clear instructions reduce ambiguity and improve behavior, but they remain model inputs rather than an unbreakable security boundary.",
+        "Example": "A shopping agent's system prompt says to use the catalog tool for product facts, never invent prices, request confirmation before purchases, and answer concisely.",
+        "Common confusion": "A system prompt can guide behavior but cannot guarantee policy enforcement or keep embedded secrets safe. High-impact constraints should also be enforced through permissions, validation, callbacks, and guardrails.",
+        "Study-group notes": "Week 1 described the system prompt as the agent's job description: identity, hard rules, behavioral guidelines, routing logic, and output expectations."
+      }
+    },
+    {
+      "id": "tool",
+      "term": "Tool",
+      "aliases": [
+        "agent tool",
+        "function tool"
+      ],
+      "category": "agent-systems",
+      "status": "published",
+      "introduced_in": "week-01",
+      "last_reviewed": "2026-07-12",
+      "relations": [
+        {
+          "type": "related",
+          "target": "agent"
+        },
+        {
+          "type": "related",
+          "target": "callback"
+        },
+        {
+          "type": "related",
+          "target": "guardrail"
+        },
+        {
+          "type": "related",
+          "target": "model-context-protocol"
+        }
+      ],
+      "sources": [
+        {
+          "title": "Custom Tools for ADK",
+          "url": "https://adk.dev/tools-custom/",
+          "note": "Defines a tool as a specific capability that lets an agent perform developer-defined actions beyond text generation."
+        },
+        {
+          "title": "A practical guide to building agents",
+          "url": "https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/",
+          "note": "Distinguishes data, action, and orchestration tools and explains how tools extend an agent through external systems."
+        }
+      ],
+      "sections": {
+        "Simple definition": "A defined capability an agent can request to retrieve information, perform an action, or delegate work.",
+        "Working definition": "A tool is a named, structured capability exposed to an agent. The model sees a description and input schema and can emit a structured request to use it; the framework validates that request, executes developer-defined logic, and returns the result to the agent.",
+        "Why it matters": "Tools connect model reasoning to current data and real effects. Clear names, descriptions, schemas, narrow permissions, predictable outputs, and useful errors strongly affect whether an agent behaves reliably and safely.",
+        "Example": "A `lookup_order(order_id)` tool accepts an order identifier and returns structured shipment status. The model chooses whether and how to request it, while application code performs the actual lookup.",
+        "Common confusion": "The LLM does not directly execute a Python function or API. It produces a request; the framework or application decides whether to allow the request, runs the tool, and adds the result to the next model context.",
+        "Study-group notes": "Week 1 emphasized the full protocol: schema shown to the model → structured tool request → framework execution → result returned as a new observation."
+      }
+    }
+  ]
+}
