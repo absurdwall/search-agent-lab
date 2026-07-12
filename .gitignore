@@ -15,6 +15,7 @@ __pycache__/
 *.py[cod]
 
 # Local tool state
+my_agent/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
