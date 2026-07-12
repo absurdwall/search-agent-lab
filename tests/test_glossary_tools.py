@@ -4,7 +4,7 @@ import hashlib
 import json
 import unittest
 
-from course_agent.tools import (
+from spooky.tools import (
     CANONICAL_GLOSSARY_URL,
     EXPECTED_IDS,
     SCHEMA_VERSION,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from search_agent_lab.course_demo import summarize_events
+from search_agent_lab.spooky_demo import summarize_events
 
 
 def event(
@@ -16,13 +16,13 @@ def event(
     return {
         "id": event_id,
         "invocationId": invocation_id,
-        "author": "course_agent",
+        "author": "spooky",
         "content": {"role": "model", "parts": [part]},
         **extra,
     }
 
 
-class CourseDemoEventTests(unittest.TestCase):
+class SpookyDemoEventTests(unittest.TestCase):
     def test_function_call_is_included_with_ids(self) -> None:
         rows = summarize_events(
             [
@@ -98,7 +98,7 @@ class CourseDemoEventTests(unittest.TestCase):
                 {
                     "id": "event-2",
                     "invocationId": "invocation-1",
-                    "author": "course_agent",
+                    "author": "spooky",
                     "content": {
                         "parts": [
                             {

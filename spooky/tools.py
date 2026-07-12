@@ -1,4 +1,4 @@
-"""Deterministic tools backed only by the committed course glossary."""
+"""Deterministic tools backed only by the committed study-group glossary."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def _match_term(
 
 
 def search_glossary(query: str) -> dict[str, object]:
-    """Search course glossary names and definitions for up to five candidates."""
+    """Search study-group glossary names and definitions for up to five candidates."""
     if not isinstance(query, str):
         return {"status": "not_found", "query": "", "results": []}
     query_tokens = [token for token in _tokens(query) if token not in _STOP_WORDS]

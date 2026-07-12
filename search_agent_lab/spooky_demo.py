@@ -1,4 +1,4 @@
-"""Small REST helpers for the shared Course Agent teaching server."""
+"""Small REST helpers for Spooky's shared teaching server."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from urllib import error, parse, request
 
 BASE_URL = "http://127.0.0.1:8000"
 ADK_WEB_URL = BASE_URL
-APP_NAME = "course_agent"
+APP_NAME = "spooky"
 USER_ID = "user"
 STARTUP_COMMAND = """source .venv/bin/activate
 
@@ -40,24 +40,24 @@ def _json_request(
 
 
 def check_server() -> None:
-    """Confirm that the shared ADK server is healthy and exposes Course Agent."""
+    """Confirm that the shared ADK server is healthy and exposes Spooky."""
     try:
         health = _json_request("GET", "/health")
         apps = _json_request("GET", "/list-apps")
         if health != {"status": "ok"} or not isinstance(apps, list):
             raise ValueError("unexpected ADK server response")
         if APP_NAME not in apps:
-            raise ValueError("Course Agent is not loaded")
+            raise ValueError("Spooky is not loaded")
     except (error.URLError, OSError, ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError(
-            "Course Agent server is not ready. Start it from the repository "
+            "Spooky server is not ready. Start it from the repository "
             f"root with:\n\n{STARTUP_COMMAND}"
         ) from exc
 
 
 def create_session() -> dict[str, object]:
-    """Create a fresh in-memory Course Agent session for the ADK Web user."""
-    session_id = f"glossary-demo-{secrets.token_hex(3)}"
+    """Create a fresh in-memory Spooky session for the ADK Web user."""
+    session_id = f"spooky-demo-{secrets.token_hex(3)}"
     result = _json_request(
         "POST",
         f"/apps/{APP_NAME}/users/{USER_ID}/sessions",
@@ -88,7 +88,7 @@ def run_message(session_id: str, message: str) -> list[dict[str, object]]:
 
 
 def get_session(session_id: str) -> dict[str, object]:
-    """Fetch the same session that was used for a Course Agent run."""
+    """Fetch the same session that was used for a Spooky run."""
     safe_session_id = parse.quote(session_id, safe="")
     result = _json_request(
         "GET",
