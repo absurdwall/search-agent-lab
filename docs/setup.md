@@ -19,6 +19,7 @@ From the repository root:
 python3.11 --version
 python3.11 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install --require-hashes -r requirements.lock
 python -m pip check
 adk --version
@@ -226,7 +227,7 @@ GOOGLE_CLOUD_LOCATION="us-central1"
 Learners do not need uv. The current lock was generated with uv 0.9.17 using:
 
 ~~~zsh
-uv pip compile --python-version 3.11 --universal --generate-hashes requirements.in -o requirements.lock
+uv pip compile --python-version 3.11 --universal --generate-hashes --no-strip-extras requirements.in -o requirements.lock
 ~~~
 
 Regenerate it only after intentionally testing the changed environment in a
