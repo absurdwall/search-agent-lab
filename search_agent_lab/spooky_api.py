@@ -13,6 +13,7 @@ from typing import Protocol
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from google.adk.events import Event
 from google.adk.runners import Runner
@@ -33,6 +34,10 @@ INTERNAL_USER_ID = "spooky-web"
 MAX_MESSAGE_CHARS = 2_000
 CHAT_TIMEOUT_SECONDS = 120
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+LOCAL_WEBSITE_ORIGINS = (
+    "http://127.0.0.1:8765",
+    "http://localhost:8765",
+)
 
 _EXPECTED_ID_SET = frozenset(EXPECTED_IDS)
 _LOGGER = logging.getLogger(__name__)
@@ -264,6 +269,14 @@ def create_app(service: ChatService | None = None) -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+    )
+    api.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(LOCAL_WEBSITE_ORIGINS),
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+        expose_headers=["X-Request-ID"],
     )
 
     @api.middleware("http")

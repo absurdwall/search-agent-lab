@@ -10,6 +10,7 @@ import httpx
 from search_agent_lab.spooky_api import (
     APP_NAME,
     INTERNAL_USER_ID,
+    LOCAL_WEBSITE_ORIGINS,
     MAX_MESSAGE_CHARS,
     AdkSpookyService,
     ChatResult,
@@ -52,6 +53,115 @@ class SpookyApiContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
         self.assertTrue(response.headers["X-Request-ID"].startswith("req_"))
+
+    async def test_allowed_website_origins_receive_narrow_cors_headers(
+        self,
+    ) -> None:
+        for origin in LOCAL_WEBSITE_ORIGINS:
+            with self.subTest(origin=origin):
+                service = FakeService(
+                    ChatResult(answer="Safe answer.", sources=())
+                )
+                health = await request(
+                    service, "GET", "/health", headers={"Origin": origin}
+                )
+                chat = await request(
+                    service,
+                    "POST",
+                    "/v1/chat",
+                    headers={"Origin": origin},
+                    json={"message": "What is a Tool?"},
+                )
+                preflight = await request(
+                    service,
+                    "OPTIONS",
+                    "/v1/chat",
+                    headers={
+                        "Origin": origin,
+                        "Access-Control-Request-Method": "POST",
+                        "Access-Control-Request-Headers": "content-type",
+                    },
+                )
+
+                self.assertEqual(
+                    health.headers["Access-Control-Allow-Origin"], origin
+                )
+                self.assertEqual(chat.status_code, 200)
+                self.assertEqual(chat.json()["answer"], "Safe answer.")
+                self.assertEqual(
+                    chat.headers["Access-Control-Allow-Origin"], origin
+                )
+                self.assertEqual(
+                    chat.headers["Access-Control-Expose-Headers"],
+                    "X-Request-ID",
+                )
+                self.assertNotIn(
+                    "Access-Control-Allow-Credentials", chat.headers
+                )
+                self.assertEqual(preflight.status_code, 200)
+                self.assertEqual(
+                    preflight.headers["Access-Control-Allow-Origin"], origin
+                )
+                self.assertEqual(
+                    preflight.headers["Access-Control-Allow-Methods"], "GET, POST"
+                )
+                self.assertIn(
+                    "content-type",
+                    preflight.headers["Access-Control-Allow-Headers"].lower(),
+                )
+                self.assertNotIn(
+                    "Access-Control-Allow-Credentials", preflight.headers
+                )
+                self.assertEqual(len(service.calls), 1)
+
+    async def test_disallowed_origin_receives_no_allow_origin_header(self) -> None:
+        origin = "http://127.0.0.1:9999"
+        service = FakeService(ChatResult(answer="Safe answer.", sources=()))
+        chat = await request(
+            service,
+            "POST",
+            "/v1/chat",
+            headers={"Origin": origin},
+            json={"message": "What is a Tool?"},
+        )
+        preflight = await request(
+            service,
+            "OPTIONS",
+            "/v1/chat",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(chat.status_code, 200)
+        self.assertNotIn("Access-Control-Allow-Origin", chat.headers)
+        self.assertEqual(preflight.status_code, 400)
+        self.assertNotIn("Access-Control-Allow-Origin", preflight.headers)
+
+    async def test_cors_keeps_safe_error_envelope_unchanged(self) -> None:
+        response = await request(
+            FakeService(),
+            "POST",
+            "/v1/chat",
+            headers={"Origin": LOCAL_WEBSITE_ORIGINS[0]},
+            json={"message": "   "},
+        )
+        body = response.json()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            body["error"],
+            {
+                "code": "EMPTY_MESSAGE",
+                "message": "message must contain non-whitespace characters.",
+            },
+        )
+        self.assertEqual(set(body), {"error", "request_id"})
+        self.assertEqual(
+            response.headers["Access-Control-Allow-Origin"],
+            LOCAL_WEBSITE_ORIGINS[0],
+        )
 
     async def test_success_is_stable_and_trims_input(self) -> None:
         service = FakeService(
