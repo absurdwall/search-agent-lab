@@ -48,6 +48,12 @@ Web provides complete local Request, Response, Event, and Graph inspection.
 ADK Web is a development and teaching interface, not the final deployed
 website assistant.
 
+Week 2 also includes a deliberately narrow, single-turn local HTTP boundary
+for a future website integration. See [docs/spooky-api.md](docs/spooky-api.md)
+for its exact `GET /health` and `POST /v1/chat` contract, safe error mapping,
+and local start command. It wraps the existing Spooky agent without exposing
+ADK's session or event APIs to a browser.
+
 After a successful optional live run, Week 1 learners can generate a
 deterministic, evidence-bound agent codename and a prefilled public GitHub
 Issue Form. That checkpoint is a cheerful honor-system engagement mechanism,
