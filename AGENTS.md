@@ -9,3 +9,4 @@
 - Do not copy the upstream shop_agent.ipynb into this repository. Run that instructor specimen later from a pinned, separate upstream checkout.
 - White-box teaching may show safe runtime interfaces and redacted events; it must never expose private reasoning, raw traces, or secrets.
 - personalized-shopping is out of scope until it is explicitly opened.
+- Follow `docs/branching.md`: never push directly to `main`, and never modify a frozen weekly branch.
