@@ -8,6 +8,13 @@ code, deterministic tests, and a tested dependency lock. It does not own
 study-group planning or slides, and it does not copy Google's shopping-agent
 demo.
 
+## Weekly versions
+
+Cloning the default `main` branch gives learners the current released week.
+Earlier learner states remain available on cumulative `week-NN` branches; the
+Week 1 state is `week-01`. See [docs/branching.md](docs/branching.md) for the
+maintainer workflow.
+
 ## Start here
 
 Follow [docs/setup.md](docs/setup.md) to create an isolated local environment,
