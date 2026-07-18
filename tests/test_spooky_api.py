@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
+from unittest.mock import patch
 
 from google.adk.events import Event
 from google.genai import types
@@ -9,15 +11,19 @@ import httpx
 
 from search_agent_lab.spooky_api import (
     APP_NAME,
+    ALLOWED_WEBSITE_ORIGINS_ENV,
+    DEFAULT_WEBSITE_ORIGINS,
     INTERNAL_USER_ID,
     LOCAL_WEBSITE_ORIGINS,
     MAX_MESSAGE_CHARS,
+    PUBLIC_WEBSITE_ORIGIN,
     AdkSpookyService,
     ChatResult,
     ProviderUnavailableError,
     Source,
     _canonical_sources,
     _final_answer,
+    _allowed_website_origins,
     _retrieved_term_ids,
     create_app,
 )
@@ -57,7 +63,7 @@ class SpookyApiContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_allowed_website_origins_receive_narrow_cors_headers(
         self,
     ) -> None:
-        for origin in LOCAL_WEBSITE_ORIGINS:
+        for origin in DEFAULT_WEBSITE_ORIGINS:
             with self.subTest(origin=origin):
                 service = FakeService(
                     ChatResult(answer="Safe answer.", sources=())
@@ -113,6 +119,61 @@ class SpookyApiContractTests(unittest.IsolatedAsyncioTestCase):
                     "Access-Control-Allow-Credentials", preflight.headers
                 )
                 self.assertEqual(len(service.calls), 1)
+
+    async def test_public_github_pages_origin_is_allowed(self) -> None:
+        service = FakeService(ChatResult(answer="Safe answer.", sources=()))
+        response = await request(
+            service,
+            "POST",
+            "/v1/chat",
+            headers={"Origin": PUBLIC_WEBSITE_ORIGIN},
+            json={"message": "What is a Tool?"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers["Access-Control-Allow-Origin"],
+            PUBLIC_WEBSITE_ORIGIN,
+        )
+
+    async def test_cors_environment_override_remains_an_exact_allowlist(
+        self,
+    ) -> None:
+        configured_origin = "https://preview.example"
+        with patch.dict(
+            os.environ,
+            {ALLOWED_WEBSITE_ORIGINS_ENV: configured_origin},
+        ):
+            service = FakeService(ChatResult(answer="Safe answer.", sources=()))
+            response = await request(
+                service,
+                "POST",
+                "/v1/chat",
+                headers={"Origin": configured_origin},
+                json={"message": "What is a Tool?"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers["Access-Control-Allow-Origin"],
+            configured_origin,
+        )
+
+    def test_cors_environment_rejects_unsafe_origins(self) -> None:
+        unsafe_values = (
+            "*",
+            "https://*.example.com",
+            "https://user:password@example.com",
+            "https://example.com/path",
+            "https://example.com?query=yes",
+            "https://example.com#fragment",
+            "https://example.com,",
+        )
+        for value in unsafe_values:
+            with self.subTest(value=value), patch.dict(
+                os.environ,
+                {ALLOWED_WEBSITE_ORIGINS_ENV: value},
+            ):
+                with self.assertRaises(ValueError):
+                    _allowed_website_origins()
 
     async def test_disallowed_origin_receives_no_allow_origin_header(self) -> None:
         origin = "http://127.0.0.1:9999"

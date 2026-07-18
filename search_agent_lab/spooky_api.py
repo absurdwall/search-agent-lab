@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import secrets
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -38,6 +39,9 @@ LOCAL_WEBSITE_ORIGINS = (
     "http://127.0.0.1:8765",
     "http://localhost:8765",
 )
+PUBLIC_WEBSITE_ORIGIN = "https://absurdwall.github.io"
+DEFAULT_WEBSITE_ORIGINS = LOCAL_WEBSITE_ORIGINS + (PUBLIC_WEBSITE_ORIGIN,)
+ALLOWED_WEBSITE_ORIGINS_ENV = "SPOOKY_ALLOWED_ORIGINS"
 
 _EXPECTED_ID_SET = frozenset(EXPECTED_IDS)
 _LOGGER = logging.getLogger(__name__)
@@ -113,6 +117,41 @@ def _request_id() -> str:
 def _provider_is_configured() -> bool:
     value = os.getenv("GOOGLE_API_KEY", "").strip()
     return bool(value and value != "your-own-key-goes-here")
+
+
+def _allowed_website_origins() -> tuple[str, ...]:
+    """Return an exact CORS allowlist, rejecting wildcard-like configuration."""
+    configured = os.getenv(ALLOWED_WEBSITE_ORIGINS_ENV)
+    if configured is None:
+        return DEFAULT_WEBSITE_ORIGINS
+
+    candidates = tuple(origin.strip() for origin in configured.split(","))
+    if not candidates or any(not origin for origin in candidates):
+        raise ValueError(
+            f"{ALLOWED_WEBSITE_ORIGINS_ENV} must contain exact origins."
+        )
+
+    origins: list[str] = []
+    for origin in candidates:
+        parsed = urlsplit(origin)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+            or "*" in origin
+        ):
+            raise ValueError(
+                f"{ALLOWED_WEBSITE_ORIGINS_ENV} must contain exact HTTP(S) "
+                "origins without credentials, paths, queries, fragments, or "
+                "wildcards."
+            )
+        if origin not in origins:
+            origins.append(origin)
+    return tuple(origins)
 
 
 def _result_payload(value: object) -> Mapping[str, object] | None:
@@ -264,7 +303,7 @@ def create_app(service: ChatService | None = None) -> FastAPI:
     """Build the narrow API; callers may inject a deterministic test service."""
     chat_service = service or AdkSpookyService()
     api = FastAPI(
-        title="Spooky local API",
+        title="Spooky API",
         version="1.0.0",
         docs_url=None,
         redoc_url=None,
@@ -272,7 +311,7 @@ def create_app(service: ChatService | None = None) -> FastAPI:
     )
     api.add_middleware(
         CORSMiddleware,
-        allow_origins=list(LOCAL_WEBSITE_ORIGINS),
+        allow_origins=list(_allowed_website_origins()),
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
