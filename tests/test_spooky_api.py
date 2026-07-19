@@ -24,6 +24,7 @@ from search_agent_lab.spooky_api import (
     _canonical_sources,
     _final_answer,
     _allowed_website_origins,
+    _provider_is_configured,
     _retrieved_term_ids,
     create_app,
 )
@@ -111,9 +112,9 @@ class SpookyApiContractTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     preflight.headers["Access-Control-Allow-Methods"], "GET, POST"
                 )
-                self.assertIn(
-                    "content-type",
-                    preflight.headers["Access-Control-Allow-Headers"].lower(),
+                self.assertEqual(
+                    preflight.headers["Access-Control-Allow-Headers"],
+                    "Accept, Accept-Language, Content-Language, Content-Type",
                 )
                 self.assertNotIn(
                     "Access-Control-Allow-Credentials", preflight.headers
@@ -324,6 +325,131 @@ class SpookyApiContractTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, status)
                 self.assertEqual(response.json()["error"]["code"], code)
                 self.assertNotIn(secret, response.text)
+
+
+class ProviderConfigurationTests(unittest.TestCase):
+    def assert_provider_configured(self, expected: bool, **environment: str) -> None:
+        with patch.dict(os.environ, environment, clear=True):
+            self.assertIs(_provider_is_configured(), expected)
+
+    def test_developer_api_key_mode_requires_a_real_key(self) -> None:
+        self.assert_provider_configured(True, GOOGLE_API_KEY="real-test-key")
+        for value in ("", "   ", "your-own-key-goes-here"):
+            with self.subTest(value=value):
+                self.assert_provider_configured(False, GOOGLE_API_KEY=value)
+
+    def test_canonical_google_cloud_mode_requires_project_and_location(
+        self,
+    ) -> None:
+        for value in ("true", "TRUE", "True", "1"):
+            with self.subTest(value=value):
+                self.assert_provider_configured(
+                    True,
+                    GOOGLE_GENAI_USE_ENTERPRISE=value,
+                    GOOGLE_CLOUD_PROJECT="search-agent-lab",
+                    GOOGLE_CLOUD_LOCATION="global",
+                )
+
+        incomplete = (
+            {
+                "GOOGLE_GENAI_USE_ENTERPRISE": "true",
+                "GOOGLE_CLOUD_LOCATION": "global",
+            },
+            {
+                "GOOGLE_GENAI_USE_ENTERPRISE": "true",
+                "GOOGLE_CLOUD_PROJECT": "search-agent-lab",
+            },
+            {
+                "GOOGLE_GENAI_USE_ENTERPRISE": "true",
+                "GOOGLE_CLOUD_PROJECT": "   ",
+                "GOOGLE_CLOUD_LOCATION": "global",
+            },
+            {
+                "GOOGLE_GENAI_USE_ENTERPRISE": "true",
+                "GOOGLE_CLOUD_PROJECT": "search-agent-lab",
+                "GOOGLE_CLOUD_LOCATION": "   ",
+            },
+        )
+        for environment in incomplete:
+            with self.subTest(environment=environment):
+                self.assert_provider_configured(False, **environment)
+
+    def test_legacy_vertex_flag_is_only_a_fallback(self) -> None:
+        self.assert_provider_configured(
+            True,
+            GOOGLE_GENAI_USE_VERTEXAI="true",
+            GOOGLE_CLOUD_PROJECT="search-agent-lab",
+            GOOGLE_CLOUD_LOCATION="global",
+        )
+        self.assert_provider_configured(
+            False,
+            GOOGLE_GENAI_USE_VERTEXAI="1",
+            GOOGLE_CLOUD_PROJECT="search-agent-lab",
+        )
+
+    def test_whitespace_mode_values_match_the_locked_sdk(self) -> None:
+        for variable in (
+            "GOOGLE_GENAI_USE_ENTERPRISE",
+            "GOOGLE_GENAI_USE_VERTEXAI",
+        ):
+            for value in (" true ", " 1 "):
+                cloud_environment = {
+                    variable: value,
+                    "GOOGLE_CLOUD_PROJECT": "search-agent-lab",
+                    "GOOGLE_CLOUD_LOCATION": "global",
+                }
+                with self.subTest(variable=variable, value=value):
+                    self.assert_provider_configured(False, **cloud_environment)
+                    self.assert_provider_configured(
+                        True,
+                        **cloud_environment,
+                        GOOGLE_API_KEY="real-test-key",
+                    )
+
+    def test_false_garbage_or_missing_mode_uses_developer_api_mode(self) -> None:
+        self.assert_provider_configured(False)
+        for value in ("false", "0", "yes", "garbage", ""):
+            with self.subTest(value=value):
+                self.assert_provider_configured(
+                    False,
+                    GOOGLE_GENAI_USE_ENTERPRISE=value,
+                    GOOGLE_CLOUD_PROJECT="search-agent-lab",
+                    GOOGLE_CLOUD_LOCATION="global",
+                )
+        self.assert_provider_configured(
+            False,
+            GOOGLE_CLOUD_PROJECT="search-agent-lab",
+            GOOGLE_CLOUD_LOCATION="global",
+        )
+
+    def test_enterprise_flag_wins_conflicts_with_legacy_flag(self) -> None:
+        cloud_environment = {
+            "GOOGLE_GENAI_USE_ENTERPRISE": "false",
+            "GOOGLE_GENAI_USE_VERTEXAI": "true",
+            "GOOGLE_CLOUD_PROJECT": "search-agent-lab",
+            "GOOGLE_CLOUD_LOCATION": "global",
+        }
+        self.assert_provider_configured(False, **cloud_environment)
+        self.assert_provider_configured(
+            True,
+            **cloud_environment,
+            GOOGLE_API_KEY="real-test-key",
+        )
+
+    def test_selected_google_cloud_mode_takes_precedence_over_api_key(self) -> None:
+        self.assert_provider_configured(
+            True,
+            GOOGLE_GENAI_USE_ENTERPRISE="true",
+            GOOGLE_CLOUD_PROJECT="search-agent-lab",
+            GOOGLE_CLOUD_LOCATION="global",
+            GOOGLE_API_KEY="real-test-key",
+        )
+        self.assert_provider_configured(
+            False,
+            GOOGLE_GENAI_USE_ENTERPRISE="true",
+            GOOGLE_CLOUD_PROJECT="search-agent-lab",
+            GOOGLE_API_KEY="real-test-key",
+        )
 
 
 class EventProjectionTests(unittest.TestCase):

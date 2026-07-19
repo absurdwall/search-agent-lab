@@ -42,6 +42,11 @@ LOCAL_WEBSITE_ORIGINS = (
 PUBLIC_WEBSITE_ORIGIN = "https://absurdwall.github.io"
 DEFAULT_WEBSITE_ORIGINS = LOCAL_WEBSITE_ORIGINS + (PUBLIC_WEBSITE_ORIGIN,)
 ALLOWED_WEBSITE_ORIGINS_ENV = "SPOOKY_ALLOWED_ORIGINS"
+ENTERPRISE_MODE_ENV = "GOOGLE_GENAI_USE_ENTERPRISE"
+LEGACY_VERTEX_MODE_ENV = "GOOGLE_GENAI_USE_VERTEXAI"
+GOOGLE_CLOUD_PROJECT_ENV = "GOOGLE_CLOUD_PROJECT"
+GOOGLE_CLOUD_LOCATION_ENV = "GOOGLE_CLOUD_LOCATION"
+GOOGLE_API_KEY_ENV = "GOOGLE_API_KEY"
 
 _EXPECTED_ID_SET = frozenset(EXPECTED_IDS)
 _LOGGER = logging.getLogger(__name__)
@@ -114,9 +119,23 @@ def _request_id() -> str:
     return f"req_{secrets.token_urlsafe(12)}"
 
 
+def _google_cloud_backend_is_selected() -> bool:
+    """Mirror the locked Google SDK's enterprise-over-legacy precedence."""
+    value = os.getenv(ENTERPRISE_MODE_ENV)
+    if value is None:
+        value = os.getenv(LEGACY_VERTEX_MODE_ENV)
+    return value is not None and value.lower() in {"true", "1"}
+
+
 def _provider_is_configured() -> bool:
-    value = os.getenv("GOOGLE_API_KEY", "").strip()
-    return bool(value and value != "your-own-key-goes-here")
+    """Check credentials for the backend the locked Google SDK will select."""
+    if _google_cloud_backend_is_selected():
+        project = os.getenv(GOOGLE_CLOUD_PROJECT_ENV, "").strip()
+        location = os.getenv(GOOGLE_CLOUD_LOCATION_ENV, "").strip()
+        return bool(project and location)
+
+    api_key = os.getenv(GOOGLE_API_KEY_ENV, "").strip()
+    return bool(api_key and api_key != "your-own-key-goes-here")
 
 
 def _allowed_website_origins() -> tuple[str, ...]:
