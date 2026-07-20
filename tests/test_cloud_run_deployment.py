@@ -296,6 +296,57 @@ class CloudRunRunbookTests(unittest.TestCase):
         self.assertIn('.url | endswith("#skill")', cycle)
         self.assertIn('.error.code == "PROVIDER_UNAVAILABLE"', cycle)
         self.assertIn('.error.code == "REQUEST_TIMEOUT"', cycle)
+        self.assertNotIn("IGNORECASE", cycle)
+        self.assertIn('tolower($1) == tolower(key) ":"', cycle)
+
+    def test_diagnostic_header_parser_is_case_insensitive_and_portable(
+        self,
+    ) -> None:
+        diagnostic = self.runbook.split(
+            "## Diagnose a provider failure without moving traffic", 1
+        )[1].split("## Open publicly", 1)[0]
+        cycle = diagnostic.split("fail-fast block", 1)[1].split(
+            "~~~zsh", 1
+        )[1].split("~~~", 1)[0]
+        parser = "spooky_cold_header_value()" + cycle.split(
+            "spooky_cold_header_value()", 1
+        )[1].split("# spooky_cold_header_value end", 1)[0]
+        probe = (
+            parser
+            + r'''
+fixture_dir="$(mktemp -d)"
+trap 'rm -rf -- "$fixture_dir"' EXIT
+
+printf 'x-request-id: req_lower\r\n' > "$fixture_dir/lower"
+printf 'X-REQUEST-ID: req_upper\r\n' > "$fixture_dir/upper"
+printf 'X-ReQuEsT-Id: req_mixed\r\n' > "$fixture_dir/mixed"
+printf 'content-type: application/json\r\n' > "$fixture_dir/unrelated"
+printf 'x-request-id: req_first\r\ncontent-type: application/json\r\nX-Request-ID: req_last\r\n' > "$fixture_dir/duplicate"
+
+test "$(spooky_cold_header_value X-Request-ID "$fixture_dir/lower")" = \
+  "req_lower"
+test "$(spooky_cold_header_value X-Request-ID "$fixture_dir/upper")" = \
+  "req_upper"
+test "$(spooky_cold_header_value X-Request-ID "$fixture_dir/mixed")" = \
+  "req_mixed"
+test -z "$(spooky_cold_header_value X-Request-ID \
+  "$fixture_dir/unrelated")"
+test "$(spooky_cold_header_value X-Request-ID \
+  "$fixture_dir/duplicate")" = "req_last"
+'''
+        )
+
+        for shell in ("bash", "zsh"):
+            with self.subTest(shell=shell):
+                completed = subprocess.run(
+                    [shell, "-c", probe],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0)
+                self.assertEqual(completed.stdout, "")
+                self.assertEqual(completed.stderr, "")
         self.assertIn("leaves the prior revision at 100%", diagnostic)
         self.assertIn("Do not call the\nbehavior fixed", diagnostic)
         self.assertIn("explicitly accepts the residual risk", diagnostic)

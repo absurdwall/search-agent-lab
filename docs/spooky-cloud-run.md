@@ -579,6 +579,21 @@ and revision name:
     unset TASK_COLD_TOKEN 2>/dev/null || true
     rm -f -- "$TASK_COLD_HEADERS" "$TASK_COLD_BODY"
   }
+
+  spooky_cold_header_value() {
+    local key="$1"
+    local header_file="$2"
+    awk -v key="$key" '
+      tolower($1) == tolower(key) ":" {
+        sub(/^[^:]*:[[:space:]]*/, "")
+        sub(/\r$/, "")
+        value=$0
+      }
+      END { print value }
+    ' "$header_file"
+  }
+  # spooky_cold_header_value end
+
   trap spooky_cold_cleanup EXIT
 
   TASK_COLD_TOKEN="$(gcloud auth print-identity-token)"
@@ -596,15 +611,8 @@ and revision name:
   TASK_COLD_REQUEST_END="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
 
   TASK_COLD_JSON_REQUEST_ID="$(jq -er '.request_id' "$TASK_COLD_BODY")"
-  TASK_COLD_HEADER_REQUEST_ID="$(awk '
-    BEGIN { IGNORECASE=1 }
-    /^X-Request-ID:/ {
-      sub(/^[^:]*:[[:space:]]*/, "")
-      sub(/\r$/, "")
-      value=$0
-    }
-    END { print value }
-  ' "$TASK_COLD_HEADERS")"
+  TASK_COLD_HEADER_REQUEST_ID="$(spooky_cold_header_value \
+    'X-Request-ID' "$TASK_COLD_HEADERS")"
   test -n "$TASK_COLD_HEADER_REQUEST_ID"
   test "$TASK_COLD_JSON_REQUEST_ID" = "$TASK_COLD_HEADER_REQUEST_ID"
 
