@@ -507,10 +507,302 @@ the invoker check, the recorded prior revision at 100%, and removes the
 diagnostic tag. Do not continue if recovery does not print
 `diagnostic-drift-recovery=passed`.
 
-Run at most one baseline chat and, only after the tagged revision reaches the
-same idle state, one chat without a preceding health request. A failed chat may
-receive one immediate manual retry. Do not add an automatic application retry,
-run a second experiment, or migrate traffic as part of diagnosis.
+The complete experiment has one global request budget. The successful
+no-reproduction path makes exactly four chat calls: two first-stage calls and
+two second-stage calls. Every path is limited to five chat calls because the
+first `503` or `504` may receive the experiment's only immediate manual retry.
+That retry must immediately follow the failed call. Then stop, even if the
+retry succeeds. Do not add an automatic application retry or migrate traffic
+as part of diagnosis.
+
+The first-stage experiment is limited to one baseline chat and, only after the
+tagged revision reaches `active=0, idle=1`, one chat without a preceding health
+request. Any non-`200` first-stage response ends the first stage and prohibits
+the second stage. A `503` or `504` follows the single-retry rule above. Any
+other non-`200`, curl/auth/transport failure, malformed response envelope,
+request-ID mismatch, or monitoring ambiguity stops the complete experiment
+immediately and must not be retried.
+
+If both first-stage chats return `200`, record only that the failure was not
+reproduced during an idle-instance resume. `active=0, idle=1` is not a true
+scale-to-zero cold start, so it does not prove that the provider failure is
+fixed. Keep the prior revision at 100%, keep the diagnostic revision at 0%,
+and keep the service private.
+
+Only after this no-reproduction path has passed review may a second-stage
+experiment run. It is limited to two true scale-to-zero cycles and must follow
+all of these rules:
+
+- Before each request, use Cloud Monitoring without invoking the service and
+  require `active=0` and `idle=0` from the same aligned sample timestamp or
+  aligned interval, strictly after the preceding request completed. The metric
+  samples every 60 seconds and can take up to 120 seconds to appear. Separately
+  fresh zeroes with different timestamps do not prove scale-to-zero. A missing
+  series, missing point, stale sample, mismatched timestamp, or ambiguous
+  interval is not zero and stops the experiment. An idle instance can remain
+  available for about 15 minutes; wait and recheck instead of sending a request
+  while either aligned fresh value is nonzero.
+- Recheck immediately before each request that the prior revision still has
+  100% traffic, the `provider-diag` revision still has 0%, the invoker IAM
+  check is enabled, and `allUsers` is absent. Any drift ends the experiment.
+- Send exactly one authenticated tagged `POST /v1/chat` per cycle. Do not call
+  `/health` first, run requests concurrently, or perform a load test. A 0%
+  traffic tagged revision does not count toward the service-level maximum, so
+  the diagnostic revision's own instance limit is the applicable safety bound.
+- Record the request start time. After the response, require revision-scoped
+  Cloud Run system startup evidence timestamped at or after that start time.
+  Project only the startup timestamp and revision name. If startup evidence is
+  missing or ambiguous, the call does not count as a cold-start result; stop
+  without retrying or starting another cycle.
+- If a corroborated cold request returns `200`, do not retry it. If the first
+  `503` or `504` occurs, read only the allowlisted classification fields, apply
+  the global single-retry rule, and then end every remaining cycle.
+
+After the aligned-zero and drift guards pass, run one cold cycle with this
+fail-fast block. It records a fresh RFC3339 start immediately before `curl` and
+an end immediately after the response. It then makes 12 read-only polling
+queries separated by 10-second waits, followed by one final read; query runtime
+is additional. No poll invokes an endpoint. Every read reuses the same closed
+event-time window; never move either bound. Exactly one revision-scoped
+`AUTOSCALING` startup row in the final result corroborates the cycle. The query
+filters the fixed Cloud Run system message but projects only the safe timestamp
+and revision name:
+
+~~~zsh
+(
+  set -euo pipefail
+
+  TASK_COLD_HEADERS="/tmp/spooky-cold-headers.txt"
+  TASK_COLD_BODY="/tmp/spooky-cold-body.json"
+
+  spooky_cold_cleanup() {
+    unset TASK_COLD_TOKEN 2>/dev/null || true
+    rm -f -- "$TASK_COLD_HEADERS" "$TASK_COLD_BODY"
+  }
+  trap spooky_cold_cleanup EXIT
+
+  TASK_COLD_TOKEN="$(gcloud auth print-identity-token)"
+  TASK_COLD_REQUEST_START="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  TASK_COLD_STATUS="$(curl --silent --show-error \
+    --max-time 190 \
+    -H "Authorization: Bearer ${TASK_COLD_TOKEN}" \
+    -H 'Origin: https://absurdwall.github.io' \
+    -H 'Content-Type: application/json' \
+    -D "$TASK_COLD_HEADERS" \
+    -o "$TASK_COLD_BODY" \
+    -w '%{http_code}' \
+    -d '{"message":"What is the difference between a Tool and a Skill?"}' \
+    "$TASK_TAGGED_URL/v1/chat")"
+  TASK_COLD_REQUEST_END="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+
+  TASK_COLD_JSON_REQUEST_ID="$(jq -er '.request_id' "$TASK_COLD_BODY")"
+  TASK_COLD_HEADER_REQUEST_ID="$(awk '
+    BEGIN { IGNORECASE=1 }
+    /^X-Request-ID:/ {
+      sub(/^[^:]*:[[:space:]]*/, "")
+      sub(/\r$/, "")
+      value=$0
+    }
+    END { print value }
+  ' "$TASK_COLD_HEADERS")"
+  test -n "$TASK_COLD_HEADER_REQUEST_ID"
+  test "$TASK_COLD_JSON_REQUEST_ID" = "$TASK_COLD_HEADER_REQUEST_ID"
+
+  case "$TASK_COLD_STATUS" in
+    200)
+      jq -e '
+        (.answer | type == "string" and length > 0) and
+        any(.sources[]; .url | endswith("#tool")) and
+        any(.sources[]; .url | endswith("#skill"))
+      ' "$TASK_COLD_BODY" > /dev/null
+      ;;
+    503)
+      jq -e '.error.code == "PROVIDER_UNAVAILABLE"' \
+        "$TASK_COLD_BODY" > /dev/null
+      ;;
+    504)
+      jq -e '.error.code == "REQUEST_TIMEOUT"' \
+        "$TASK_COLD_BODY" > /dev/null
+      ;;
+    *)
+      printf 'unexpected-cold-status=%s\n' "$TASK_COLD_STATUS" >&2
+      exit 1
+      ;;
+  esac
+
+  TASK_STARTUP_FILTER="resource.type=\"cloud_run_revision\" AND \
+resource.labels.service_name=\"${TASK_SERVICE}\" AND \
+resource.labels.revision_name=\"${TASK_DIAG_REVISION}\" AND \
+timestamp>=\"${TASK_COLD_REQUEST_START}\" AND \
+timestamp<=\"${TASK_COLD_REQUEST_END}\" AND \
+logName=\"projects/${TASK_PROJECT}/logs/run.googleapis.com%2Fvarlog%2Fsystem\" AND \
+textPayload:\"Starting new instance. Reason: AUTOSCALING\""
+
+  TASK_STARTUP_ROWS=""
+  TASK_STARTUP_COUNT=0
+
+  spooky_read_startup_rows() {
+    gcloud logging read "$TASK_STARTUP_FILTER" \
+      --project "$TASK_PROJECT" \
+      --limit 2 \
+      --order=asc \
+      --format='value(timestamp,resource.labels.revision_name)'
+  }
+
+  for TASK_STARTUP_ATTEMPT in {1..12}; do
+    TASK_STARTUP_ROWS="$(spooky_read_startup_rows)"
+    TASK_STARTUP_COUNT="$(printf '%s\n' "$TASK_STARTUP_ROWS" \
+      | awk 'NF { count += 1 } END { print count + 0 }')"
+    test "$TASK_STARTUP_COUNT" -le 1
+    if test "$TASK_STARTUP_ATTEMPT" != 12; then
+      sleep 10
+    fi
+  done
+
+  TASK_STARTUP_ROWS="$(spooky_read_startup_rows)"
+  TASK_STARTUP_COUNT="$(printf '%s\n' "$TASK_STARTUP_ROWS" \
+    | awk 'NF { count += 1 } END { print count + 0 }')"
+  test "$TASK_STARTUP_COUNT" = 1
+  printf 'COLD_REQUEST_START=%s\n' "$TASK_COLD_REQUEST_START"
+  printf 'COLD_REQUEST_END=%s\n' "$TASK_COLD_REQUEST_END"
+  printf 'COLD_STATUS=%s\n' "$TASK_COLD_STATUS"
+  printf 'COLD_REQUEST_ID=%s\n' "$TASK_COLD_JSON_REQUEST_ID"
+  printf 'COLD_STARTUP=%s\n' "$TASK_STARTUP_ROWS"
+  printf 'cold-cycle=corroborated\n'
+)
+~~~
+
+If a failure is captured, stop and design a separately reviewed mitigation
+from its classification. If both corroborated cold requests return `200`,
+record only `not reproduced in four total diagnostic calls`. Do not call the
+behavior fixed. Remove the `provider-diag` tag through this separate
+fail-closed finalization gate, which leaves the prior revision at 100% and the
+service private:
+
+~~~zsh
+(
+  set -euo pipefail
+
+  TASK_FINAL_BEFORE="/tmp/spooky-final-before.json"
+  TASK_FINAL_AFTER="/tmp/spooky-final-after.json"
+  TASK_FINAL_POLICY="/tmp/spooky-final-policy.json"
+
+  spooky_final_cleanup() {
+    rm -f -- \
+      "$TASK_FINAL_BEFORE" \
+      "$TASK_FINAL_AFTER" \
+      "$TASK_FINAL_POLICY"
+  }
+
+  spooky_final_verify_closed() {
+    local verification_failed=0
+
+    gcloud run services describe "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --format=json > "$TASK_FINAL_AFTER" || verification_failed=1
+    gcloud run services get-iam-policy "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --format=json > "$TASK_FINAL_POLICY" || verification_failed=1
+
+    jq -e --arg prior "$TASK_PRIOR_REVISION" \
+      --arg diagnostic "$TASK_DIAG_REVISION" '
+      any(.status.traffic[]?;
+        .revisionName == $prior and (.percent // 0) == 100) and
+      ([.status.traffic[]? | select(.tag == "provider-diag")] | length == 0) and
+      ([.status.traffic[]? | select(.revisionName == $diagnostic)]
+        | length == 0) and
+      ((.metadata.annotations["run.googleapis.com/invoker-iam-disabled"]
+        // "false") == "false")
+    ' "$TASK_FINAL_AFTER" > /dev/null || verification_failed=1
+    jq -e '
+      [.bindings[]?.members[]?] | index("allUsers") == null
+    ' "$TASK_FINAL_POLICY" > /dev/null || verification_failed=1
+
+    return "$verification_failed"
+  }
+
+  spooky_final_recover() {
+    local recovery_failed=0
+    set +e
+
+    gcloud run services update "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --invoker-iam-check || recovery_failed=1
+    gcloud run services update-traffic "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --to-revisions "${TASK_PRIOR_REVISION}=100" || recovery_failed=1
+    gcloud run services update-traffic "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --remove-tags provider-diag || recovery_failed=1
+    spooky_final_verify_closed || recovery_failed=1
+
+    if (( recovery_failed == 0 )); then
+      printf 'diagnostic-finalization-recovery=passed\n'
+    else
+      printf 'diagnostic-finalization-recovery=failed\n' >&2
+    fi
+    set -e
+    return "$recovery_failed"
+  }
+
+  spooky_final_exit() {
+    local exit_status="$?"
+    trap - EXIT
+    if (( exit_status != 0 )); then
+      spooky_final_recover || true
+    fi
+    spooky_final_cleanup
+    exit "$exit_status"
+  }
+
+  trap spooky_final_cleanup EXIT
+
+  gcloud run services describe "$TASK_SERVICE" \
+    --project "$TASK_PROJECT" \
+    --region "$TASK_REGION" \
+    --format=json > "$TASK_FINAL_BEFORE"
+  gcloud run services get-iam-policy "$TASK_SERVICE" \
+    --project "$TASK_PROJECT" \
+    --region "$TASK_REGION" \
+    --format=json > "$TASK_FINAL_POLICY"
+
+  jq -e --arg prior "$TASK_PRIOR_REVISION" \
+    --arg diagnostic "$TASK_DIAG_REVISION" '
+    any(.status.traffic[]?;
+      .revisionName == $prior and (.percent // 0) == 100) and
+    any(.status.traffic[]?;
+      .revisionName == $diagnostic and .tag == "provider-diag" and
+      (.percent // 0) == 0) and
+    ((.metadata.annotations["run.googleapis.com/invoker-iam-disabled"]
+      // "false") == "false")
+  ' "$TASK_FINAL_BEFORE" > /dev/null
+  jq -e '
+    [.bindings[]?.members[]?] | index("allUsers") == null
+  ' "$TASK_FINAL_POLICY" > /dev/null
+
+  trap spooky_final_exit EXIT
+
+  gcloud run services update-traffic "$TASK_SERVICE" \
+    --project "$TASK_PROJECT" \
+    --region "$TASK_REGION" \
+    --remove-tags provider-diag
+
+  spooky_final_verify_closed
+  printf 'diagnostic-finalization=passed\n'
+)
+~~~
+
+Do not consider finalization complete unless the block exits zero and prints
+`diagnostic-finalization=passed`. On a failure after mutation begins, its
+`EXIT` trap preserves the original failure status while restoring the private
+invoker check, prior revision at 100%, absent tag, and verified private state.
+A later private release-candidate promotion requires a separate policy decision
+that explicitly accepts the residual risk.
 
 Bound the log query to the diagnostic revision and test timestamps. Project
 only the allowlisted structured diagnostic fields; never fetch a complete log
@@ -544,9 +836,10 @@ httpRequest.requestUrl:\"/v1/chat\"" \
   --format='table(timestamp,resource.labels.revision_name,httpRequest.status,httpRequest.latency,trace)'
 ~~~
 
-Stop after classification. Do not make the service public or move traffic
-until the failure category has been reviewed and a separate mitigation has
-passed the private gate.
+Stop after classification or after the bounded no-reproduction path. Do not
+make the service public or move traffic until the failure category has been
+reviewed and a separate mitigation has passed the private gate, or until a
+separate policy decision explicitly accepts the residual risk.
 
 ## Open publicly only after private verification
 

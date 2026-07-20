@@ -109,7 +109,7 @@ class CloudRunRunbookTests(unittest.TestCase):
             'test "$TASK_TAGGED_UNAUTH_STATUS" = "403"'
         )
         success = diagnostic.index("diagnostic-deployment-gate=passed")
-        diagnostic_request = diagnostic.index("Run at most one baseline chat")
+        diagnostic_request = diagnostic.index("The first-stage experiment")
         self.assertLess(exact_sha, deploy)
         self.assertLess(clean_tree, deploy)
         self.assertLess(baseline, deploy)
@@ -165,6 +165,291 @@ class CloudRunRunbookTests(unittest.TestCase):
         self.assertNotIn("textPayload", log_queries)
         self.assertNotIn("protoPayload", log_queries)
         self.assertIn("Do not add an automatic application retry", diagnostic)
+
+    def test_diagnostic_no_reproduction_path_requires_true_scale_to_zero(
+        self,
+    ) -> None:
+        diagnostic = self.runbook.split(
+            "## Diagnose a provider failure without moving traffic", 1
+        )[1].split("## Open publicly", 1)[0]
+
+        first_stage = diagnostic.index("The first-stage experiment")
+        idle_resume = diagnostic.index("`active=0, idle=1`", first_stage)
+        second_stage = diagnostic.index(
+            "limited to two true scale-to-zero cycles", idle_resume
+        )
+        true_zero = diagnostic.index("`active=0` and `idle=0`", second_stage)
+        first_cold_request = diagnostic.index(
+            "exactly one authenticated tagged `POST /v1/chat`", true_zero
+        )
+        final_outcome = diagnostic.index(
+            "not reproduced in four total diagnostic calls", first_cold_request
+        )
+        self.assertLess(first_stage, idle_resume)
+        self.assertLess(idle_resume, second_stage)
+        self.assertLess(second_stage, true_zero)
+        self.assertLess(true_zero, first_cold_request)
+        self.assertLess(first_cold_request, final_outcome)
+
+        self.assertIn("limited to two true scale-to-zero cycles", diagnostic)
+        self.assertIn("use Cloud Monitoring without invoking", diagnostic)
+        self.assertIn("after the preceding request completed", diagnostic)
+        self.assertIn("same aligned sample timestamp", diagnostic)
+        self.assertIn("Separately\n  fresh zeroes", diagnostic)
+        self.assertIn("mismatched timestamp", diagnostic)
+        self.assertIn("ambiguous\n  interval", diagnostic)
+        self.assertIn("samples every 60 seconds", diagnostic)
+        self.assertIn("up to 120 seconds", diagnostic)
+        self.assertIn("A missing\n  series", diagnostic)
+        self.assertIn("stale sample", diagnostic)
+        self.assertIn("about 15 minutes", diagnostic)
+        self.assertIn("prior revision still has\n  100% traffic", diagnostic)
+        self.assertIn("`provider-diag` revision still has 0%", diagnostic)
+        self.assertIn("invoker IAM\n  check is enabled", diagnostic)
+        self.assertIn("`allUsers` is absent", diagnostic)
+        self.assertIn("Any drift ends the experiment", diagnostic)
+        self.assertIn("Do not call\n  `/health` first", diagnostic)
+        self.assertIn("run requests concurrently", diagnostic)
+        self.assertIn("perform a load test", diagnostic)
+        self.assertIn(
+            "does not count toward the service-level maximum", diagnostic
+        )
+        self.assertIn(
+            "If a corroborated cold request returns `200`, do not retry",
+            diagnostic,
+        )
+        self.assertIn(
+            "revision-scoped\n  Cloud Run system startup evidence", diagnostic
+        )
+        self.assertIn("startup timestamp and revision name", diagnostic)
+        self.assertIn("call does not count as a cold-start result", diagnostic)
+        cycle = diagnostic.split("fail-fast block", 1)[1].split("~~~zsh", 1)[
+            1
+        ].split("~~~", 1)[0]
+        request_start = cycle.index("TASK_COLD_REQUEST_START=")
+        request = cycle.index("TASK_COLD_STATUS=", request_start)
+        curl = cycle.index("curl --silent", request)
+        request_end = cycle.index("TASK_COLD_REQUEST_END=", curl)
+        startup_filter = cycle.index("TASK_STARTUP_FILTER=", request_end)
+        lower_bound = cycle.index(
+            'timestamp>=\\"${TASK_COLD_REQUEST_START}\\"', startup_filter
+        )
+        upper_bound = cycle.index(
+            'timestamp<=\\"${TASK_COLD_REQUEST_END}\\"', lower_bound
+        )
+        autoscaling = cycle.index(
+            r'textPayload:\"Starting new instance. Reason: AUTOSCALING\"',
+            upper_bound,
+        )
+        polling = cycle.index("for TASK_STARTUP_ATTEMPT in {1..12}", autoscaling)
+        final_read = cycle.index(
+            'TASK_STARTUP_ROWS="$(spooky_read_startup_rows)"',
+            polling,
+        )
+        final_read = cycle.index(
+            'TASK_STARTUP_ROWS="$(spooky_read_startup_rows)"',
+            final_read + 1,
+        )
+        final_count = cycle.index(
+            'test "$TASK_STARTUP_COUNT" = 1', final_read
+        )
+        success = cycle.index("cold-cycle=corroborated", final_count)
+        self.assertLess(request_start, request)
+        self.assertLess(request, curl)
+        self.assertLess(curl, request_end)
+        self.assertLess(request_end, startup_filter)
+        self.assertLess(startup_filter, lower_bound)
+        self.assertLess(lower_bound, upper_bound)
+        self.assertLess(upper_bound, autoscaling)
+        self.assertLess(autoscaling, polling)
+        self.assertLess(polling, final_read)
+        self.assertLess(final_read, final_count)
+        self.assertLess(final_count, success)
+        self.assertIn(
+            "--format='value(timestamp,resource.labels.revision_name)'",
+            cycle,
+        )
+        self.assertEqual(cycle.count("TASK_STARTUP_FILTER="), 1)
+        self.assertNotIn("TASK_COLD_REQUEST_END=", cycle[request_end + 1 :])
+        self.assertIn('test "$TASK_STARTUP_COUNT" = 1', cycle)
+        self.assertNotIn("break", cycle)
+
+        json_id = cycle.index("TASK_COLD_JSON_REQUEST_ID=", request_end)
+        header_id = cycle.index("TASK_COLD_HEADER_REQUEST_ID=", json_id)
+        nonempty_id = cycle.index(
+            'test -n "$TASK_COLD_HEADER_REQUEST_ID"', header_id
+        )
+        equal_id = cycle.index(
+            'test "$TASK_COLD_JSON_REQUEST_ID" = '
+            '"$TASK_COLD_HEADER_REQUEST_ID"',
+            nonempty_id,
+        )
+        status_case = cycle.index('case "$TASK_COLD_STATUS" in', equal_id)
+        self.assertLess(json_id, header_id)
+        self.assertLess(header_id, nonempty_id)
+        self.assertLess(nonempty_id, equal_id)
+        self.assertLess(equal_id, status_case)
+        self.assertLess(status_case, startup_filter)
+        self.assertEqual(cycle.count("curl --silent"), 1)
+        self.assertNotIn("/health", cycle)
+        self.assertIn('.url | endswith("#tool")', cycle)
+        self.assertIn('.url | endswith("#skill")', cycle)
+        self.assertIn('.error.code == "PROVIDER_UNAVAILABLE"', cycle)
+        self.assertIn('.error.code == "REQUEST_TIMEOUT"', cycle)
+        self.assertIn("leaves the prior revision at 100%", diagnostic)
+        self.assertIn("Do not call the\nbehavior fixed", diagnostic)
+        self.assertIn("explicitly accepts the residual risk", diagnostic)
+
+    def test_diagnostic_cold_cycle_block_is_shell_portable(self) -> None:
+        diagnostic = self.runbook.split(
+            "## Diagnose a provider failure without moving traffic", 1
+        )[1].split("## Open publicly", 1)[0]
+        cycle = diagnostic.split("fail-fast block", 1)[1].split(
+            "~~~zsh", 1
+        )[1].split("~~~", 1)[0]
+
+        for shell in ("bash", "zsh"):
+            with self.subTest(shell=shell):
+                completed = subprocess.run(
+                    [shell, "-n"],
+                    input=cycle,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0)
+                self.assertEqual(completed.stderr, "")
+
+    def test_diagnostic_request_budget_and_stop_rules_are_global(self) -> None:
+        diagnostic = self.runbook.split(
+            "## Diagnose a provider failure without moving traffic", 1
+        )[1].split("## Open publicly", 1)[0]
+
+        budget = diagnostic.index("one global request budget")
+        success_budget = diagnostic.index("exactly four chat calls", budget)
+        absolute_budget = diagnostic.index("limited to five chat calls", budget)
+        single_retry = diagnostic.index("only immediate manual retry", budget)
+        first_stage_stop = diagnostic.index(
+            "Any non-`200` first-stage response", single_retry
+        )
+        other_failures = diagnostic.index(
+            "curl/auth/transport failure", first_stage_stop
+        )
+        self.assertLess(budget, success_budget)
+        self.assertLess(success_budget, absolute_budget)
+        self.assertLess(absolute_budget, single_retry)
+        self.assertLess(single_retry, first_stage_stop)
+        self.assertLess(first_stage_stop, other_failures)
+        self.assertIn("immediately follow the failed call", diagnostic)
+        self.assertIn("Then stop, even if the\nretry succeeds", diagnostic)
+        self.assertIn("prohibits\nthe second stage", diagnostic)
+        self.assertIn("malformed response envelope", diagnostic)
+        self.assertIn("request-ID mismatch", diagnostic)
+        self.assertIn("monitoring ambiguity", diagnostic)
+        self.assertIn("must not be retried", diagnostic)
+
+    def test_diagnostic_finalization_is_fail_closed_and_ordered(self) -> None:
+        diagnostic = self.runbook.split(
+            "## Diagnose a provider failure without moving traffic", 1
+        )[1].split("## Open publicly", 1)[0]
+        finalizer = diagnostic.split("spooky_final_cleanup()", 1)[1]
+
+        cleanup_trap = finalizer.index("trap spooky_final_cleanup EXIT")
+        precheck = finalizer.index('> "$TASK_FINAL_BEFORE"', cleanup_trap)
+        precheck_private = finalizer.index(
+            'index("allUsers") == null', precheck
+        )
+        exit_trap = finalizer.index("trap spooky_final_exit EXIT", precheck)
+        mutation = finalizer.index("--remove-tags provider-diag", exit_trap)
+        postcheck = finalizer.index("spooky_final_verify_closed", mutation)
+        success = finalizer.index("diagnostic-finalization=passed", postcheck)
+        self.assertLess(cleanup_trap, precheck)
+        self.assertLess(precheck, precheck_private)
+        self.assertLess(precheck_private, exit_trap)
+        self.assertLess(exit_trap, mutation)
+        self.assertLess(mutation, postcheck)
+        self.assertLess(postcheck, success)
+
+        verifier = diagnostic.split("spooky_final_verify_closed()", 1)[1].split(
+            "spooky_final_recover()", 1
+        )[0]
+        self.assertIn('.tag == "provider-diag"', verifier)
+        self.assertIn("length == 0", verifier)
+        self.assertIn(".revisionName == $diagnostic", verifier)
+        self.assertIn("invoker-iam-disabled", verifier)
+        self.assertIn('index("allUsers") == null', verifier)
+
+        recovery = diagnostic.split("spooky_final_recover()", 1)[1].split(
+            "spooky_final_exit()", 1
+        )[0]
+        private = recovery.index("--invoker-iam-check")
+        prior = recovery.index("--to-revisions", private)
+        remove_tag = recovery.index("--remove-tags provider-diag", prior)
+        verify = recovery.index("spooky_final_verify_closed", remove_tag)
+        self.assertLess(private, prior)
+        self.assertLess(prior, remove_tag)
+        self.assertLess(remove_tag, verify)
+
+        exit_handler = diagnostic.split("spooky_final_exit()", 1)[1].split(
+            'gcloud run services describe "$TASK_SERVICE"', 1
+        )[0]
+        self.assertIn('local exit_status="$?"', exit_handler)
+        self.assertIn("spooky_final_recover || true", exit_handler)
+        self.assertIn('exit "$exit_status"', exit_handler)
+
+    def test_diagnostic_finalization_block_is_shell_portable(self) -> None:
+        diagnostic = self.runbook.split(
+            "## Diagnose a provider failure without moving traffic", 1
+        )[1].split("## Open publicly", 1)[0]
+        finalization = diagnostic.split("fail-closed finalization gate", 1)[
+            1
+        ].split("~~~zsh", 1)[1].split("~~~", 1)[0]
+
+        for shell in ("bash", "zsh"):
+            with self.subTest(shell=shell):
+                completed = subprocess.run(
+                    [shell, "-n"],
+                    input=finalization,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0)
+                self.assertEqual(completed.stderr, "")
+
+    def test_diagnostic_finalization_exit_preserves_failure(self) -> None:
+        probe = r'''
+(
+  set -euo pipefail
+  spooky_final_recover() { printf 'final-recovery-called\n'; }
+  spooky_final_cleanup() { printf 'final-cleanup-called\n'; }
+  spooky_final_exit() {
+    local exit_status="$?"
+    trap - EXIT
+    if (( exit_status != 0 )); then
+      spooky_final_recover || true
+    fi
+    spooky_final_cleanup
+    exit "$exit_status"
+  }
+  trap spooky_final_exit EXIT
+  false
+)
+'''
+        for shell in ("bash", "zsh"):
+            with self.subTest(shell=shell):
+                completed = subprocess.run(
+                    [shell, "-c", probe],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 1)
+                self.assertEqual(
+                    completed.stdout.splitlines(),
+                    ["final-recovery-called", "final-cleanup-called"],
+                )
+                self.assertEqual(completed.stderr, "")
 
     def test_diagnostic_exit_trap_is_portable_and_preserves_failure(self) -> None:
         probe = r'''
