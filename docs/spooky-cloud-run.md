@@ -338,6 +338,216 @@ min/max instances, concurrency, timeout, CPU, memory, and ingress in the Cloud
 Run Console. Confirm the build identity has no Vertex role and the runtime
 identity has no build/deployer role.
 
+## Diagnose a provider failure without moving traffic
+
+Keep the serving revision private and at 100% traffic. After the diagnostic
+change has passed code review and is available at a new pushed, detached full
+commit SHA, record the current serving revision and deploy the diagnostic
+revision through this fail-closed gate:
+
+~~~zsh
+(
+  set -euo pipefail
+
+  TASK_DIAG_BEFORE="/tmp/spooky-diag-before.json"
+  TASK_DIAG_AFTER="/tmp/spooky-diag-after.json"
+  TASK_DIAG_POLICY="/tmp/spooky-diag-policy.json"
+
+  spooky_diag_cleanup() {
+    rm -f -- \
+      "$TASK_DIAG_BEFORE" \
+      "$TASK_DIAG_AFTER" \
+      "$TASK_DIAG_POLICY"
+  }
+
+  spooky_diag_recover() {
+    local recovery_failed=0
+    set +e
+
+    gcloud run services update "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --invoker-iam-check || recovery_failed=1
+
+    gcloud run services update-traffic "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --to-revisions "${TASK_PRIOR_REVISION}=100" || recovery_failed=1
+
+    gcloud run services update-traffic "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --remove-tags provider-diag || recovery_failed=1
+
+    gcloud run services describe "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --format=json > "$TASK_DIAG_AFTER" || recovery_failed=1
+    gcloud run services get-iam-policy "$TASK_SERVICE" \
+      --project "$TASK_PROJECT" \
+      --region "$TASK_REGION" \
+      --format=json > "$TASK_DIAG_POLICY" || recovery_failed=1
+
+    jq -e --arg prior "$TASK_PRIOR_REVISION" '
+      any(.status.traffic[]?;
+        .revisionName == $prior and (.percent // 0) == 100) and
+      ([.status.traffic[]? | select(.tag == "provider-diag")] | length == 0) and
+      ((.metadata.annotations["run.googleapis.com/invoker-iam-disabled"]
+        // "false") == "false")
+    ' "$TASK_DIAG_AFTER" > /dev/null || recovery_failed=1
+    jq -e '
+      [.bindings[]?.members[]?] | index("allUsers") == null
+    ' "$TASK_DIAG_POLICY" > /dev/null || recovery_failed=1
+
+    if (( recovery_failed == 0 )); then
+      printf 'diagnostic-drift-recovery=passed\n'
+    else
+      printf 'diagnostic-drift-recovery=failed\n' >&2
+    fi
+    set -e
+    return "$recovery_failed"
+  }
+
+  spooky_diag_exit() {
+    local exit_status="$?"
+    trap - EXIT
+    if (( exit_status != 0 )); then
+      spooky_diag_recover || true
+    fi
+    spooky_diag_cleanup
+    exit "$exit_status"
+  }
+
+  test "$(git rev-parse HEAD)" = "$TASK_COMMIT"
+  test -z "$(git status --porcelain)"
+
+  gcloud run services describe "$TASK_SERVICE" \
+    --project "$TASK_PROJECT" \
+    --region "$TASK_REGION" \
+    --format=json > "$TASK_DIAG_BEFORE"
+  TASK_PRIOR_REVISION="$(jq -er '
+    [.status.traffic[]?
+      | select((.percent // 0) == 100)
+      | .revisionName]
+    | if length == 1 then .[0]
+      else error("Expected exactly one 100% serving revision") end
+  ' "$TASK_DIAG_BEFORE")"
+
+  trap spooky_diag_exit EXIT
+
+  gcloud run deploy "$TASK_SERVICE" \
+    --project "$TASK_PROJECT" \
+    --region "$TASK_REGION" \
+    --source . \
+    --service-account "$TASK_RUNTIME_SA" \
+    --set-env-vars "GOOGLE_GENAI_USE_ENTERPRISE=True,GOOGLE_CLOUD_PROJECT=${TASK_PROJECT},GOOGLE_CLOUD_LOCATION=${TASK_MODEL_LOCATION}" \
+    --port 8080 \
+    --cpu 1 \
+    --memory 512Mi \
+    --concurrency 1 \
+    --timeout 180s \
+    --cpu-throttling \
+    --min 0 \
+    --max 2 \
+    --ingress all \
+    --invoker-iam-check \
+    --no-traffic \
+    --tag provider-diag \
+    --quiet
+
+  gcloud run services describe "$TASK_SERVICE" \
+    --project "$TASK_PROJECT" \
+    --region "$TASK_REGION" \
+    --format=json > "$TASK_DIAG_AFTER"
+  gcloud run services get-iam-policy "$TASK_SERVICE" \
+    --project "$TASK_PROJECT" \
+    --region "$TASK_REGION" \
+    --format=json > "$TASK_DIAG_POLICY"
+
+  TASK_DIAG_REVISION="$(jq -er '.status.latestCreatedRevisionName' \
+    "$TASK_DIAG_AFTER")"
+  TASK_TAGGED_URL="$(jq -er --arg revision "$TASK_DIAG_REVISION" '
+    .status.traffic[]
+    | select(.tag == "provider-diag" and .revisionName == $revision)
+    | .url
+  ' "$TASK_DIAG_AFTER")"
+
+  jq -e --arg prior "$TASK_PRIOR_REVISION" \
+    --arg diagnostic "$TASK_DIAG_REVISION" '
+    any(.status.traffic[]?;
+      .revisionName == $prior and (.percent // 0) == 100) and
+    any(.status.traffic[]?;
+      .revisionName == $diagnostic and .tag == "provider-diag" and
+      (.percent // 0) == 0) and
+    ((.metadata.annotations["run.googleapis.com/invoker-iam-disabled"]
+      // "false") == "false")
+  ' "$TASK_DIAG_AFTER" > /dev/null
+  jq -e '
+    [.bindings[]?.members[]?] | index("allUsers") == null
+  ' "$TASK_DIAG_POLICY" > /dev/null
+
+  TASK_TAGGED_UNAUTH_STATUS="$(curl --silent --show-error \
+    --output /dev/null \
+    --write-out '%{http_code}' \
+    "$TASK_TAGGED_URL/health")"
+  test "$TASK_TAGGED_UNAUTH_STATUS" = "403"
+
+  printf 'PRIOR_REVISION=%s\n' "$TASK_PRIOR_REVISION"
+  printf 'DIAGNOSTIC_REVISION=%s\n' "$TASK_DIAG_REVISION"
+  printf 'DIAGNOSTIC_TAGGED_URL=%s\n' "$TASK_TAGGED_URL"
+  printf 'diagnostic-deployment-gate=passed\n'
+)
+~~~
+
+Do not make an authenticated diagnostic request unless the block exits zero
+and prints `diagnostic-deployment-gate=passed`. Copy the three printed safe
+revision/URL values into the corresponding shell variables before testing.
+If any assertion or deployment step fails, the `EXIT` trap immediately restores
+the invoker check, the recorded prior revision at 100%, and removes the
+diagnostic tag. Do not continue if recovery does not print
+`diagnostic-drift-recovery=passed`.
+
+Run at most one baseline chat and, only after the tagged revision reaches the
+same idle state, one chat without a preceding health request. A failed chat may
+receive one immediate manual retry. Do not add an automatic application retry,
+run a second experiment, or migrate traffic as part of diagnosis.
+
+Bound the log query to the diagnostic revision and test timestamps. Project
+only the allowlisted structured diagnostic fields; never fetch a complete log
+payload:
+
+~~~zsh
+TASK_DIAG_FILTER="resource.type=\"cloud_run_revision\" AND \
+resource.labels.service_name=\"${TASK_SERVICE}\" AND \
+resource.labels.revision_name=\"${TASK_DIAG_REVISION}\" AND \
+timestamp>=\"${TASK_DIAG_START}\" AND timestamp<=\"${TASK_DIAG_END}\" AND \
+jsonPayload.event=\"spooky_provider_failure\""
+
+gcloud logging read "$TASK_DIAG_FILTER" \
+  --project "$TASK_PROJECT" \
+  --limit 10 \
+  --format='table(timestamp,resource.labels.revision_name,jsonPayload.request_id,jsonPayload.failure_source,jsonPayload.failure_category,jsonPayload.upstream_status)'
+~~~
+
+Correlate those rows with request metadata without projecting the request URL
+or any payload:
+
+~~~zsh
+gcloud logging read \
+  "resource.type=\"cloud_run_revision\" AND \
+resource.labels.service_name=\"${TASK_SERVICE}\" AND \
+resource.labels.revision_name=\"${TASK_DIAG_REVISION}\" AND \
+timestamp>=\"${TASK_DIAG_START}\" AND timestamp<=\"${TASK_DIAG_END}\" AND \
+httpRequest.requestUrl:\"/v1/chat\"" \
+  --project "$TASK_PROJECT" \
+  --limit 10 \
+  --format='table(timestamp,resource.labels.revision_name,httpRequest.status,httpRequest.latency,trace)'
+~~~
+
+Stop after classification. Do not make the service public or move traffic
+until the failure category has been reviewed and a separate mitigation has
+passed the private gate.
+
 ## Open publicly only after private verification
 
 After explicit approval, disable the invoker IAM check:

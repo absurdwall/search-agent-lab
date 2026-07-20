@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+import io
 import json
 import os
 import unittest
 from unittest.mock import patch
 
 from google.adk.events import Event
+from google.auth.exceptions import GoogleAuthError
+from google.genai import errors as genai_errors
 from google.genai import types
 import httpx
 
@@ -23,7 +27,11 @@ from search_agent_lab.spooky_api import (
     Source,
     _canonical_sources,
     _final_answer,
+    _adk_failure_category,
     _allowed_website_origins,
+    _emit_provider_failure,
+    _failure_category_for_status,
+    _numeric_api_status,
     _provider_is_configured,
     _retrieved_term_ids,
     create_app,
@@ -529,6 +537,386 @@ class FailingRunner:
         if False:
             yield None
         raise RuntimeError("private provider detail")
+
+
+class RaisingRunner:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        self.calls = 0
+
+    async def run_async(self, **_values: object):
+        self.calls += 1
+        if False:
+            yield None
+        raise self.error
+
+
+class ErrorEventRunner:
+    def __init__(self, error_code: str, error_message: str) -> None:
+        self.error_code = error_code
+        self.error_message = error_message
+        self.calls = 0
+
+    async def run_async(self, **_values: object):
+        self.calls += 1
+        yield Event(
+            author="spooky",
+            errorCode=self.error_code,
+            errorMessage=self.error_message,
+            content=types.Content(
+                role="model",
+                parts=[
+                    types.Part.from_function_response(
+                        name="get_glossary_terms",
+                        response={"tool_payload": self.error_message},
+                    )
+                ],
+            ),
+        )
+
+
+class ProviderFailureDiagnosticTests(unittest.IsolatedAsyncioTestCase):
+    def assert_one_diagnostic(self, output: str) -> dict[str, object]:
+        lines = [line for line in output.splitlines() if line]
+        self.assertEqual(len(lines), 1)
+        record = json.loads(lines[0])
+        self.assertEqual(
+            set(record),
+            {
+                "event",
+                "request_id",
+                "failure_source",
+                "failure_category",
+                "upstream_status",
+                "severity",
+                "message",
+            },
+        )
+        self.assertEqual(record["event"], "spooky_provider_failure")
+        self.assertEqual(record["severity"], "WARNING")
+        self.assertEqual(
+            record["message"], "Spooky provider failure classified."
+        )
+        return record
+
+    def test_api_status_category_table(self) -> None:
+        cases = {
+            401: "authentication",
+            403: "authorization",
+            404: "model_or_location",
+            408: "timeout",
+            429: "quota_or_capacity",
+            500: "provider_5xx",
+            502: "provider_5xx",
+            503: "provider_5xx",
+            504: "timeout",
+            418: "unknown",
+            None: "unknown",
+        }
+        for status, expected in cases.items():
+            with self.subTest(status=status):
+                self.assertEqual(
+                    _failure_category_for_status(status), expected
+                )
+
+    def test_only_plain_numeric_api_status_is_projected(self) -> None:
+        class ErrorLike:
+            def __init__(self, code: object) -> None:
+                self.code = code
+
+        for value, expected in (
+            (503, 503),
+            ("503", None),
+            (True, None),
+            (None, None),
+            (-1, None),
+            (99, None),
+            (600, None),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    _numeric_api_status(ErrorLike(value)),  # type: ignore[arg-type]
+                    expected,
+                )
+
+    def test_emitter_defensively_sanitizes_upstream_status(self) -> None:
+        for value, expected in ((503, 503), (-1, None), (99, None), (600, None)):
+            with self.subTest(value=value):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    _emit_provider_failure(
+                        request_id="req_status",
+                        failure_source="genai_api",
+                        failure_category="unknown",
+                        upstream_status=value,
+                    )
+                record = self.assert_one_diagnostic(output.getvalue())
+                self.assertEqual(record["upstream_status"], expected)
+
+    def test_adk_codes_are_allowlisted_and_unknown_values_are_redacted(
+        self,
+    ) -> None:
+        cases = {
+            "UNAUTHENTICATED": "authentication",
+            "PERMISSION_DENIED": "authorization",
+            "NOT_FOUND": "model_or_location",
+            "RESOURCE_EXHAUSTED": "quota_or_capacity",
+            "DEADLINE_EXCEEDED": "timeout",
+            "UNAVAILABLE": "provider_5xx",
+            "MALFORMED_FUNCTION_CALL": "adk_error",
+            "secret-raw-code=https://private.invalid": "adk_error",
+        }
+        for code, expected in cases.items():
+            with self.subTest(code=code):
+                self.assertEqual(_adk_failure_category(code), expected)
+
+    async def test_genai_failure_emits_one_redacted_record_without_retry(
+        self,
+    ) -> None:
+        sentinel = "credential=never-log-this"
+        private_url = "https://private.invalid/model?token=never-log-this"
+        prompt = "prompt-shaped never-log-this"
+        error = genai_errors.APIError(
+            503,
+            {
+                "error": {
+                    "message": sentinel,
+                    "url": private_url,
+                    "body": prompt,
+                }
+            },
+            httpx.Response(
+                503,
+                request=httpx.Request("POST", private_url),
+                content=sentinel,
+            ),
+        )
+        runner = RaisingRunner(error)
+        sessions = FakeSessionService()
+        service = AdkSpookyService(
+            runner=runner,  # type: ignore[arg-type]
+            session_service=sessions,  # type: ignore[arg-type]
+            provider_is_configured=lambda: True,
+        )
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(
+            ProviderUnavailableError
+        ):
+            await service.chat(prompt, "req_provider_failure")
+
+        rendered = output.getvalue()
+        record = self.assert_one_diagnostic(rendered)
+        self.assertEqual(record["request_id"], "req_provider_failure")
+        self.assertEqual(record["failure_source"], "genai_api")
+        self.assertEqual(record["failure_category"], "provider_5xx")
+        self.assertEqual(record["upstream_status"], 503)
+        for forbidden in (sentinel, private_url, prompt, "tool_payload"):
+            self.assertNotIn(forbidden, rendered)
+        self.assertEqual(runner.calls, 1)
+        self.assertEqual(len(sessions.created), 1)
+        self.assertEqual(sessions.deleted, sessions.created)
+
+    async def test_genai_504_keeps_timeout_response_and_cleanup(self) -> None:
+        sentinel = "upstream-timeout=never-log-this"
+        runner = RaisingRunner(
+            genai_errors.APIError(
+                504,
+                {"error": {"message": sentinel}},
+                httpx.Response(
+                    504,
+                    request=httpx.Request(
+                        "POST", "https://private.invalid/timeout"
+                    ),
+                    content=sentinel,
+                ),
+            )
+        )
+        sessions = FakeSessionService()
+        service = AdkSpookyService(
+            runner=runner,  # type: ignore[arg-type]
+            session_service=sessions,  # type: ignore[arg-type]
+            provider_is_configured=lambda: True,
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            response = await request(
+                service,  # type: ignore[arg-type]
+                "POST",
+                "/v1/chat",
+                json={"message": "What is a Tool?"},
+            )
+
+        record = self.assert_one_diagnostic(output.getvalue())
+        self.assertEqual(record["failure_source"], "genai_api")
+        self.assertEqual(record["failure_category"], "timeout")
+        self.assertEqual(record["upstream_status"], 504)
+        self.assertNotIn(sentinel, output.getvalue())
+        self.assertEqual(response.status_code, 504)
+        self.assertEqual(response.json()["error"]["code"], "REQUEST_TIMEOUT")
+        self.assertEqual(runner.calls, 1)
+        self.assertEqual(sessions.deleted, sessions.created)
+
+    async def test_diagnostic_output_failure_does_not_change_api_outcome(
+        self,
+    ) -> None:
+        cases = (
+            (503, BrokenPipeError("closed pipe"), 503, "PROVIDER_UNAVAILABLE"),
+            (504, OSError("closed stdout"), 504, "REQUEST_TIMEOUT"),
+            (
+                503,
+                ValueError("I/O operation on closed file"),
+                503,
+                "PROVIDER_UNAVAILABLE",
+            ),
+        )
+        for upstream, output_error, expected_status, expected_code in cases:
+            with self.subTest(upstream=upstream, output_error=type(output_error)):
+                runner = RaisingRunner(
+                    genai_errors.APIError(
+                        upstream,
+                        {"error": {"message": "secret=never-log-this"}},
+                    )
+                )
+                sessions = FakeSessionService()
+                service = AdkSpookyService(
+                    runner=runner,  # type: ignore[arg-type]
+                    session_service=sessions,  # type: ignore[arg-type]
+                    provider_is_configured=lambda: True,
+                )
+                with patch("builtins.print", side_effect=output_error):
+                    response = await request(
+                        service,  # type: ignore[arg-type]
+                        "POST",
+                        "/v1/chat",
+                        json={"message": "What is a Tool?"},
+                    )
+                self.assertEqual(response.status_code, expected_status)
+                self.assertEqual(
+                    response.json()["error"]["code"], expected_code
+                )
+                self.assertEqual(runner.calls, 1)
+                self.assertEqual(sessions.deleted, sessions.created)
+
+    async def test_adk_failure_logs_category_not_event_details(self) -> None:
+        sentinel = "event-message-or-tool-payload=never-log-this"
+        raw_code = "secret-raw-code=https://private.invalid"
+        runner = ErrorEventRunner(raw_code, sentinel)
+        sessions = FakeSessionService()
+        service = AdkSpookyService(
+            runner=runner,  # type: ignore[arg-type]
+            session_service=sessions,  # type: ignore[arg-type]
+            provider_is_configured=lambda: True,
+        )
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(
+            ProviderUnavailableError
+        ):
+            await service.chat(
+                "prompt-shaped never-log-this", "req_adk_failure"
+            )
+
+        rendered = output.getvalue()
+        record = self.assert_one_diagnostic(rendered)
+        self.assertEqual(record["failure_source"], "adk_event")
+        self.assertEqual(record["failure_category"], "adk_error")
+        self.assertIsNone(record["upstream_status"])
+        self.assertNotIn(raw_code, rendered)
+        self.assertNotIn(sentinel, rendered)
+        self.assertNotIn("prompt-shaped", rendered)
+        self.assertEqual(runner.calls, 1)
+        self.assertEqual(sessions.deleted, sessions.created)
+
+    async def test_readiness_failure_logs_only_configuration_category(
+        self,
+    ) -> None:
+        sessions = FakeSessionService()
+        service = AdkSpookyService(
+            runner=FakeRunner(),  # type: ignore[arg-type]
+            session_service=sessions,  # type: ignore[arg-type]
+            provider_is_configured=lambda: False,
+        )
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(
+            ProviderUnavailableError
+        ):
+            await service.chat(
+                "prompt-shaped never-log-this", "req_readiness"
+            )
+
+        rendered = output.getvalue()
+        record = self.assert_one_diagnostic(rendered)
+        self.assertEqual(record["failure_source"], "readiness")
+        self.assertEqual(record["failure_category"], "configuration")
+        self.assertIsNone(record["upstream_status"])
+        self.assertNotIn("prompt-shaped", rendered)
+        self.assertEqual(sessions.created, [])
+        self.assertEqual(sessions.deleted, [])
+
+    async def test_transport_and_auth_failures_use_fixed_categories(
+        self,
+    ) -> None:
+        sentinel = "exception-message=never-log-this"
+        cases = (
+            (
+                httpx.TimeoutException(
+                    sentinel,
+                    request=httpx.Request(
+                        "POST", "https://private.invalid/timeout"
+                    ),
+                ),
+                TimeoutError,
+                "http_transport",
+                "timeout",
+            ),
+            (
+                GoogleAuthError(sentinel),
+                ProviderUnavailableError,
+                "google_auth",
+                "authentication",
+            ),
+            (
+                httpx.ConnectError(
+                    sentinel,
+                    request=httpx.Request(
+                        "POST", "https://private.invalid/connect"
+                    ),
+                ),
+                ProviderUnavailableError,
+                "http_transport",
+                "transport",
+            ),
+            (
+                ConnectionError(sentinel),
+                ProviderUnavailableError,
+                "http_transport",
+                "transport",
+            ),
+            (
+                OSError(sentinel),
+                ProviderUnavailableError,
+                "os_transport",
+                "transport",
+            ),
+        )
+        for error, raised, source, category in cases:
+            with self.subTest(source=source, category=category):
+                runner = RaisingRunner(error)
+                service = AdkSpookyService(
+                    runner=runner,  # type: ignore[arg-type]
+                    session_service=FakeSessionService(),  # type: ignore[arg-type]
+                    provider_is_configured=lambda: True,
+                )
+                output = io.StringIO()
+                with redirect_stdout(output), self.assertRaises(raised):
+                    await service.chat("safe prompt", "req_transport")
+                rendered = output.getvalue()
+                record = self.assert_one_diagnostic(rendered)
+                self.assertEqual(record["failure_source"], source)
+                self.assertEqual(record["failure_category"], category)
+                self.assertIsNone(record["upstream_status"])
+                self.assertNotIn(sentinel, rendered)
+                self.assertNotIn("private.invalid", rendered)
+                self.assertEqual(runner.calls, 1)
 
 
 class TemporarySessionTests(unittest.IsolatedAsyncioTestCase):

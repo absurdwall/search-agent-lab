@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import json
 import logging
 import os
 from pathlib import Path
@@ -50,6 +51,49 @@ GOOGLE_API_KEY_ENV = "GOOGLE_API_KEY"
 
 _EXPECTED_ID_SET = frozenset(EXPECTED_IDS)
 _LOGGER = logging.getLogger(__name__)
+_PROVIDER_FAILURE_SOURCES = frozenset(
+    {
+        "readiness",
+        "adk_event",
+        "genai_api",
+        "google_auth",
+        "http_transport",
+        "os_transport",
+    }
+)
+_PROVIDER_FAILURE_CATEGORIES = frozenset(
+    {
+        "configuration",
+        "authentication",
+        "authorization",
+        "model_or_location",
+        "quota_or_capacity",
+        "provider_5xx",
+        "timeout",
+        "transport",
+        "adk_error",
+        "unknown",
+    }
+)
+_ADK_FAILURE_CATEGORIES = {
+    "401": "authentication",
+    "UNAUTHENTICATED": "authentication",
+    "403": "authorization",
+    "PERMISSION_DENIED": "authorization",
+    "404": "model_or_location",
+    "NOT_FOUND": "model_or_location",
+    "429": "quota_or_capacity",
+    "RESOURCE_EXHAUSTED": "quota_or_capacity",
+    "408": "timeout",
+    "504": "timeout",
+    "DEADLINE_EXCEEDED": "timeout",
+    "500": "provider_5xx",
+    "502": "provider_5xx",
+    "503": "provider_5xx",
+    "INTERNAL": "provider_5xx",
+    "UNAVAILABLE": "provider_5xx",
+}
+_PROVIDER_FAILURE_MESSAGE = "Spooky provider failure classified."
 
 
 class Source(BaseModel):
@@ -113,6 +157,69 @@ class ChatService(Protocol):
 
 class ProviderUnavailableError(RuntimeError):
     """The configured model provider cannot serve the request."""
+
+
+def _failure_category_for_status(status: int | None) -> str:
+    if status == 401:
+        return "authentication"
+    if status == 403:
+        return "authorization"
+    if status == 404:
+        return "model_or_location"
+    if status in {408, 504}:
+        return "timeout"
+    if status == 429:
+        return "quota_or_capacity"
+    if status in {500, 502, 503}:
+        return "provider_5xx"
+    return "unknown"
+
+
+def _adk_failure_category(error_code: object) -> str:
+    if not isinstance(error_code, str):
+        return "adk_error"
+    return _ADK_FAILURE_CATEGORIES.get(error_code, "adk_error")
+
+
+def _numeric_api_status(error: genai_errors.APIError) -> int | None:
+    status = error.code
+    return status if type(status) is int and 100 <= status <= 599 else None
+
+
+def _emit_provider_failure(
+    *,
+    request_id: str,
+    failure_source: str,
+    failure_category: str,
+    upstream_status: int | None = None,
+) -> None:
+    """Emit one allowlisted diagnostic without provider or learner data."""
+    if failure_source not in _PROVIDER_FAILURE_SOURCES:
+        raise ValueError("Unknown provider failure source")
+    if failure_category not in _PROVIDER_FAILURE_CATEGORIES:
+        raise ValueError("Unknown provider failure category")
+    safe_upstream_status = (
+        upstream_status
+        if type(upstream_status) is int and 100 <= upstream_status <= 599
+        else None
+    )
+    record = {
+        "event": "spooky_provider_failure",
+        "request_id": request_id,
+        "failure_source": failure_source,
+        "failure_category": failure_category,
+        "upstream_status": safe_upstream_status,
+        "severity": "WARNING",
+        "message": _PROVIDER_FAILURE_MESSAGE,
+    }
+    try:
+        print(
+            json.dumps(record, separators=(",", ":"), sort_keys=True),
+            flush=True,
+        )
+    except (BrokenPipeError, OSError, ValueError):
+        # Diagnostics are best-effort and must not change the API outcome.
+        pass
 
 
 def _request_id() -> str:
@@ -250,6 +357,11 @@ class AdkSpookyService:
 
     async def chat(self, message: str, request_id: str) -> ChatResult:
         if not self._provider_is_configured():
+            _emit_provider_failure(
+                request_id=request_id,
+                failure_source="readiness",
+                failure_category="configuration",
+            )
             raise ProviderUnavailableError
 
         await self._session_service.create_session(
@@ -270,6 +382,13 @@ class AdkSpookyService:
                 new_message=new_message,
             ):
                 if event.error_code:
+                    _emit_provider_failure(
+                        request_id=request_id,
+                        failure_source="adk_event",
+                        failure_category=_adk_failure_category(
+                            event.error_code
+                        ),
+                    )
                     raise ProviderUnavailableError
                 for term_id in _retrieved_term_ids(event):
                     if term_id not in term_ids:
@@ -278,12 +397,51 @@ class AdkSpookyService:
                 if final_answer is not None:
                     answer = final_answer
         except httpx.TimeoutException as exc:
+            _emit_provider_failure(
+                request_id=request_id,
+                failure_source="http_transport",
+                failure_category="timeout",
+            )
             raise TimeoutError from exc
         except genai_errors.APIError as exc:
-            if exc.code in {408, 504}:
+            upstream_status = _numeric_api_status(exc)
+            failure_category = _failure_category_for_status(upstream_status)
+            _emit_provider_failure(
+                request_id=request_id,
+                failure_source="genai_api",
+                failure_category=failure_category,
+                upstream_status=upstream_status,
+            )
+            if failure_category == "timeout":
                 raise TimeoutError from exc
             raise ProviderUnavailableError from exc
-        except (httpx.HTTPError, GoogleAuthError, ConnectionError, OSError) as exc:
+        except GoogleAuthError as exc:
+            _emit_provider_failure(
+                request_id=request_id,
+                failure_source="google_auth",
+                failure_category="authentication",
+            )
+            raise ProviderUnavailableError from exc
+        except httpx.HTTPError as exc:
+            _emit_provider_failure(
+                request_id=request_id,
+                failure_source="http_transport",
+                failure_category="transport",
+            )
+            raise ProviderUnavailableError from exc
+        except ConnectionError as exc:
+            _emit_provider_failure(
+                request_id=request_id,
+                failure_source="http_transport",
+                failure_category="transport",
+            )
+            raise ProviderUnavailableError from exc
+        except OSError as exc:
+            _emit_provider_failure(
+                request_id=request_id,
+                failure_source="os_transport",
+                failure_category="transport",
+            )
             raise ProviderUnavailableError from exc
         finally:
             try:
