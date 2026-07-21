@@ -1,4 +1,4 @@
-# Spooky local web API
+# Spooky web API
 
 This is the narrow Week 2 browser boundary for Spooky. It accepts one learner
 message, runs one turn of the existing glossary agent in a temporary in-memory
@@ -109,13 +109,19 @@ This development boundary assumes two separately served local processes:
 - study-group website: `http://127.0.0.1:8765` or `http://localhost:8765`;
 - Spooky API: `http://127.0.0.1:8001`.
 
-Only those two website origins receive CORS permission. Credentials are
-disabled; allowed methods are `GET` and `POST`; the only configured request
+Those two local origins and the production GitHub Pages origin
+`https://absurdwall.github.io` receive CORS permission by default. Credentials
+are disabled; allowed methods are `GET` and `POST`; the only configured request
 header is `Content-Type`; browser `OPTIONS` preflight is handled by the CORS
 middleware; and `X-Request-ID` is the only exposed response header. CORS is a
-browser development boundary, not authentication.
+browser boundary, not authentication.
+
+An operator may replace the complete allowlist with a comma-separated
+`SPOOKY_ALLOWED_ORIGINS` environment variable. Every entry must be an exact
+HTTP(S) origin. Startup fails rather than accepting an empty entry, wildcard,
+credential, path, query, or fragment.
 
 The website should send one `POST /v1/chat` per learner question and render
-only `answer` and the `sources` links. Conversation history, streaming,
-authentication, rate limiting, hosting, and the final public API origin remain
-out of scope for this local experiment.
+only `answer` and the `sources` links. Conversation history, streaming, and
+authentication remain out of scope. See [spooky-cloud-run.md](spooky-cloud-run.md)
+for the contained Cloud Run deployment boundary.
