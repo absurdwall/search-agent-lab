@@ -50,6 +50,13 @@ class GlossarySearchTests(unittest.TestCase):
         ids = [item["id"] for item in result["results"]]
         self.assertEqual(ids[:2], ["tool", "skill"])
 
+    def test_week2_comparison_question_finds_tool_and_sub_agent(self) -> None:
+        result = search_glossary(
+            "What is the difference between a Tool and a Sub-agent?"
+        )
+        ids = [item["id"] for item in result["results"]]
+        self.assertEqual(ids[:2], ["tool", "sub-agent"])
+
     def test_react_llm_agent_and_tool_question_finds_all(self) -> None:
         result = search_glossary(
             "How do a ReAct loop, an LLM Agent, and Tools work together?"

@@ -1,9 +1,9 @@
 {
   "source_url": "https://absurdwall.github.io/search-agent-study-group/glossary/terms.json",
-  "retrieval_date": "2026-07-12",
+  "retrieval_date": "2026-07-20",
   "source_repository": "https://github.com/absurdwall/search-agent-study-group",
-  "source_commit": "f6250fd2d84a28572b57a2dce72f5d4a1ab3db93",
+  "source_commit": "d22bdb45a06f3bcff45866873a98fe418c1e9ac4",
   "schema_version": 1,
   "term_count": 16,
-  "sha256": "d050d7919a44422ed757b6eca5c2df6aed4aa86dd08ebc6b69fc8c97e4c10323"
+  "sha256": "c08049090cb97c8df7196a511c7872f996a5e7d66f72483b8da4e08a109add95"
 }

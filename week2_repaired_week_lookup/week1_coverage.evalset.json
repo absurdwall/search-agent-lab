@@ -1,0 +1,52 @@
+{
+  "eval_set_id": "week1_coverage",
+  "name": "Week 1 coverage",
+  "description": "Checks that the repaired Agent selects the typed week lookup tool.",
+  "eval_cases": [
+    {
+      "evalId": "week1_concepts",
+      "conversation": [
+        {
+          "invocationId": "week1_concepts_turn",
+          "userContent": {
+            "parts": [
+              {
+                "text": "Which glossary concepts were introduced in Week 1?"
+              }
+            ],
+            "role": "user"
+          },
+          "finalResponse": {
+            "parts": [
+              {
+                "text": "Week 1 introduced seven glossary concepts: [Agent](https://absurdwall.github.io/search-agent-study-group/glossary/#agent), [Context window](https://absurdwall.github.io/search-agent-study-group/glossary/#context-window), [Google Agent Development Kit (ADK)](https://absurdwall.github.io/search-agent-study-group/glossary/#google-adk), [Large language model (LLM)](https://absurdwall.github.io/search-agent-study-group/glossary/#large-language-model), [Prompt](https://absurdwall.github.io/search-agent-study-group/glossary/#prompt), [System prompt](https://absurdwall.github.io/search-agent-study-group/glossary/#system-prompt), and [Tool](https://absurdwall.github.io/search-agent-study-group/glossary/#tool)."
+              }
+            ],
+            "role": "model"
+          },
+          "intermediateData": {
+            "toolUses": [
+              {
+                "args": {
+                  "introduced_in": "week-01"
+                },
+                "name": "find_terms_by_week"
+              }
+            ],
+            "toolResponses": [],
+            "intermediateResponses": []
+          },
+          "creationTimestamp": 0.0
+        }
+      ],
+      "sessionInput": {
+        "appName": "week2_repaired_week_lookup",
+        "userId": "user",
+        "state": {}
+      },
+      "creationTimestamp": 0.0,
+      "finalSessionState": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}
