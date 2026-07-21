@@ -12,7 +12,7 @@ import unicodedata
 
 
 SNAPSHOT_PATH = Path(__file__).with_name("data") / "glossary.snapshot.json"
-SNAPSHOT_SHA256 = "d050d7919a44422ed757b6eca5c2df6aed4aa86dd08ebc6b69fc8c97e4c10323"
+SNAPSHOT_SHA256 = "c08049090cb97c8df7196a511c7872f996a5e7d66f72483b8da4e08a109add95"
 SCHEMA_VERSION = 1
 CANONICAL_GLOSSARY_URL = (
     "https://absurdwall.github.io/search-agent-study-group/glossary/"

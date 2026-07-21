@@ -19,6 +19,7 @@ from search_agent_lab.checkpoints import (
     ISSUE_TEMPLATE_FILENAME,
     STATUS_COMMENT_MARKER,
     WEEK_01,
+    WEEK_02,
     CheckpointDefinition,
     EvidenceValidationError,
     UnknownCheckpointError,
@@ -75,6 +76,19 @@ class CatalogTests(unittest.TestCase):
     def test_unknown_checkpoint_id(self) -> None:
         with self.assertRaises(UnknownCheckpointError):
             get_checkpoint("week-99:not-real")
+
+    def test_week_2_catalog_lookup_and_evidence(self) -> None:
+        self.assertIs(get_checkpoint(WEEK_02.checkpoint_id), WEEK_02)
+        self.assertEqual(
+            expected_evidence(WEEK_02),
+            {
+                "finish_reason": "MALFORMED_FUNCTION_CALL",
+                "component_match_1": "L",
+                "component_match_2": "I",
+                "component_match_3": "C",
+                "component_match_4": "T",
+            },
+        )
 
     def test_week_1_v1_mappings_are_locked(self) -> None:
         evidence = expected_evidence(WEEK_01)

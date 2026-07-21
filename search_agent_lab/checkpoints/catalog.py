@@ -37,10 +37,27 @@ WEEK_01 = CheckpointDefinition(
     checkpoint_label="week-01",
 )
 
+WEEK_02 = CheckpointDefinition(
+    checkpoint_id="week-02:tool-contract-repaired",
+    phrase="Week 2 — Tool contract repaired",
+    achievement_message="🎉 The agent repaired its first tool contract!",
+    codename_version="v1",
+    issue_title="[Week 2 checkpoint] Tool contract repaired",
+    expected_evidence=(
+        ("finish_reason", "MALFORMED_FUNCTION_CALL"),
+        ("component_match_1", "L"),
+        ("component_match_2", "I"),
+        ("component_match_3", "C"),
+        ("component_match_4", "T"),
+    ),
+    checkpoint_label="week-02",
+)
+
 DEFAULT_CHECKPOINT_ID = WEEK_01.checkpoint_id
 
 CHECKPOINTS: dict[str, CheckpointDefinition] = {
     WEEK_01.checkpoint_id: WEEK_01,
+    WEEK_02.checkpoint_id: WEEK_02,
 }
 
 

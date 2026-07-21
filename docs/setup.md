@@ -29,6 +29,11 @@ The direct, reviewed inputs live in requirements.in. requirements.lock contains
 the exact transitive resolution and hashes, so do not replace the install
 command with a bare unpinned pip install.
 
+The lock also includes ADK's optional evaluation dependencies for the Week 2
+regression eval. If you created `.venv` before pulling the current lock, rerun
+the pip-upgrade and hash-locked install commands above, then restart your
+Notebook kernel before opening the ADK Web **Evals** tab.
+
 ## 2. Pass the local environment check
 
 Open notebooks/00_setup_check.ipynb in a notebook-capable editor, select the

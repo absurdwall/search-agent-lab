@@ -11,7 +11,6 @@
       ],
       "category": "agent-systems",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -54,7 +53,8 @@
         "Example": "Given “find organic milk under $4 and add the cheapest,” an agent searches the live catalog, compares the returned products, calls the cart tool with the selected item, and then reports the result.",
         "Common confusion": "Adding an LLM to an application does not automatically make it an agent. The defining property in this glossary is model-directed execution: the model chooses the next step rather than only filling a fixed position in a predefined pipeline.",
         "Study-group notes": "Week 1 shorthand: “Agent = LLM + Tools + Loop.” The formula is a useful architectural map, while the fuller definition emphasizes that the model controls the evolving path."
-      }
+      },
+      "introduced_in": "week-01"
     },
     {
       "id": "callback",
@@ -66,7 +66,6 @@
       ],
       "category": "control-and-quality",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -116,7 +115,6 @@
       ],
       "category": "foundations",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -155,7 +153,8 @@
         "Example": "An agent includes its system prompt, recent conversation events, a product-search result, and the newest user message in the next request while omitting an unrelated old transcript.",
         "Common confusion": "The context window is not durable memory. Information must be selected and placed into a model request each time; a session or memory service stores information outside the model and helps the application decide what to include.",
         "Study-group notes": "Week 1 emphasized the engineering tradeoff: give the model everything it needs while keeping the request focused enough to control cost, latency, and distraction."
-      }
+      },
+      "introduced_in": "week-01"
     },
     {
       "id": "google-adk",
@@ -167,7 +166,6 @@
       ],
       "category": "frameworks-and-protocols",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -201,7 +199,8 @@
         "Example": "A developer defines an `LlmAgent` with instructions and catalog tools, creates a `SessionService`, and uses a `Runner` to process user messages and stream execution events.",
         "Common confusion": "ADK is not an LLM and is not limited to Gemini or Python. It coordinates supported models and agent components; model capabilities, external services, and application code remain separate dependencies.",
         "Study-group notes": "Week 1 summarized ADK as `LlmAgent + Tool + Session + Runner + Callbacks`, with the framework owning the execution loop and plumbing."
-      }
+      },
+      "introduced_in": "week-01"
     },
     {
       "id": "guardrail",
@@ -213,7 +212,6 @@
       ],
       "category": "control-and-quality",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -259,7 +257,6 @@
       ],
       "category": "foundations",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -290,7 +287,8 @@
         "Example": "Given a customer question and relevant policy text, an LLM can draft an answer. To verify a live order, an agent framework must expose an order tool, execute the requested call, and return the result to the model in a later step.",
         "Common confusion": "An LLM and an agent are not synonyms. A hosted model API may offer convenient features, but the model itself does not maintain an application's durable session history or execute arbitrary business functions.",
         "Study-group notes": "Week 1 shorthand: `f(token_sequence) → output`. “No memory, tools, or loop” describes the bare model call; those capabilities come from the surrounding application or framework."
-      }
+      },
+      "introduced_in": "week-01"
     },
     {
       "id": "llm-agent",
@@ -301,7 +299,6 @@
       ],
       "category": "frameworks-and-protocols",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -355,7 +352,6 @@
       ],
       "category": "frameworks-and-protocols",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -397,7 +393,6 @@
       ],
       "category": "foundations",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -432,7 +427,8 @@
         "Example": "Before an agent answers “add the cheapest one,” its framework assembles system instructions, earlier product-search results, the prior assistant response, and the newest user message into the information sent to the model.",
         "Common confusion": "A prompt is not necessarily just the sentence typed by the user. In an agent application, the user message is often one component of a larger request assembled by the framework.",
         "Study-group notes": "Week 1 treated the prompt as “everything the LLM sees for this call,” while noting that APIs may transmit some components, such as tool schemas, in separate structured fields."
-      }
+      },
+      "introduced_in": "week-01"
     },
     {
       "id": "react",
@@ -443,7 +439,6 @@
       ],
       "category": "agent-systems",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -493,7 +488,6 @@
       ],
       "category": "frameworks-and-protocols",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -543,7 +537,6 @@
       ],
       "category": "frameworks-and-protocols",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -589,7 +582,6 @@
       ],
       "category": "agent-systems",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -626,7 +618,6 @@
       ],
       "category": "agent-systems",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -672,7 +663,6 @@
       ],
       "category": "foundations",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -707,7 +697,8 @@
         "Example": "A shopping agent's system prompt says to use the catalog tool for product facts, never invent prices, request confirmation before purchases, and answer concisely.",
         "Common confusion": "A system prompt can guide behavior but cannot guarantee policy enforcement or keep embedded secrets safe. High-impact constraints should also be enforced through permissions, validation, callbacks, and guardrails.",
         "Study-group notes": "Week 1 described the system prompt as the agent's job description: identity, hard rules, behavioral guidelines, routing logic, and output expectations."
-      }
+      },
+      "introduced_in": "week-01"
     },
     {
       "id": "tool",
@@ -718,7 +709,6 @@
       ],
       "category": "agent-systems",
       "status": "published",
-      "introduced_in": "week-01",
       "last_reviewed": "2026-07-12",
       "relations": [
         {
@@ -757,7 +747,8 @@
         "Example": "A `lookup_order(order_id)` tool accepts an order identifier and returns structured shipment status. The model chooses whether and how to request it, while application code performs the actual lookup.",
         "Common confusion": "The LLM does not directly execute a Python function or API. It produces a request; the framework or application decides whether to allow the request, runs the tool, and adds the result to the next model context.",
         "Study-group notes": "Week 1 emphasized the full protocol: schema shown to the model → structured tool request → framework execution → result returned as a new observation."
-      }
+      },
+      "introduced_in": "week-01"
     }
   ]
 }
