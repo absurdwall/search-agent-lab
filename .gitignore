@@ -21,6 +21,7 @@ my_agent/
 .ruff_cache/
 .ipynb_checkpoints/
 notebooks/*.executed.ipynb
+/spooky/.adk/session.db
 
 # macOS
 .DS_Store
